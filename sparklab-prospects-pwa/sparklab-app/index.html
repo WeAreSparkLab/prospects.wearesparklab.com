@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SparkLab Prospects</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1B2A2E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Prospects">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="icons/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<script>
+(function(){
+  try{
+    var saved = localStorage.getItem('theme_v1');
+    var mode = (saved==='dark'||saved==='light') ? saved
+      : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', mode);
+  }catch(e){}
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F4F6F5;
+    --paper-2:#EAEEEB;
+    --card:#FFFFFF;
+    --ink:#1B2A2E;
+    --ink-soft:#4A5B5E;
+    --ink-faint:#8A9A9B;
+    --line:#DBE2DF;
+    --spark:#E8A33D;
+    --spark-deep:#C9822A;
+    --teal:#2E6E6A;
+    --teal-soft:#E2EEEC;
+    --rose:#B5677A;
+    --rose-soft:#F3E5E9;
+    --green:#3F8F5E;
+    --green-soft:#E3F1E8;
+    --grey-soft:#ECEFED;
+    /* table row status tints */
+    --rt-yellow:rgba(232,163,61,.16);
+    --rt-orange:rgba(222,119,48,.17);
+    --rt-teal:rgba(46,110,106,.14);
+    --rt-blue:rgba(74,116,181,.15);
+    --rt-green:rgba(63,143,94,.17);
+    --radius:14px;
+    --shadow:0 1px 2px rgba(27,42,46,.05),0 8px 24px rgba(27,42,46,.06);
+  }
+  html[data-theme="dark"]{
+    --paper:#14191A;
+    --paper-2:#1C2224;
+    --card:#1E2527;
+    --ink:#EDF1EF;
+    --ink-soft:#B7C2C0;
+    --ink-faint:#748583;
+    --line:#2C3436;
+    --spark:#E8A33D;
+    --spark-deep:#F0B25C;
+    --teal:#59B0A9;
+    --teal-soft:#1D3634;
+    --rose:#D98CA0;
+    --rose-soft:#3A2530;
+    --green:#5CBB84;
+    --green-soft:#1E3327;
+    --grey-soft:#242B2C;
+    --rt-yellow:rgba(232,163,61,.20);
+    --rt-orange:rgba(240,150,80,.20);
+    --rt-teal:rgba(89,176,169,.18);
+    --rt-blue:rgba(120,160,220,.18);
+    --rt-green:rgba(92,187,132,.20);
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.4);
+  }
+  html{background:var(--paper);}
+  body,.stats,.search-card,.biz,.status-sel,.last-contact-in,input[type=text],select,.notes-in,.tag-btn,button.ghost{
+    transition:background-color .15s ease,color .15s ease,border-color .15s ease;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'Spline Sans Mono',ui-monospace,monospace;font-feature-settings:"tnum";}
+  .wrap{max-width:980px;margin:0 auto;padding:24px 20px 80px;}
+
+  /* Header */
+  header.app{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+  .brand{display:flex;align-items:center;gap:12px;}
+  .spark-mark{width:34px;height:34px;flex:none;}
+  h1{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:22px;letter-spacing:-.02em;margin:0;line-height:1;}
+  h1 small{display:block;font-family:'Inter';font-weight:500;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);margin-top:5px;}
+  .header-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .theme-toggle{appearance:none;flex:none;width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);transition:background-color .15s ease,border-color .15s ease,color .15s ease;}
+  .theme-toggle:hover{border-color:var(--ink-faint);color:var(--ink);}
+  .theme-toggle svg{width:18px;height:18px;}
+  .theme-toggle .sun{display:none;}
+  html[data-theme="dark"] .theme-toggle .moon{display:none;}
+  html[data-theme="dark"] .theme-toggle .sun{display:block;}
+
+  /* Stat strip */
+  .stats{display:flex;gap:0;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
+  .stat{padding:10px 16px;border-right:1px solid var(--line);min-width:74px;}
+  .stat:last-child{border-right:none;}
+  .stat .n{font-family:'Spline Sans Mono';font-weight:600;font-size:20px;line-height:1;letter-spacing:-.02em;}
+  .stat .l{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin-top:5px;}
+  .stat.spark .n{color:var(--spark-deep);}
+  .stat.green .n{color:var(--green);}
+
+  /* Tabs */
+  .tabs{display:flex;gap:4px;margin:22px 0 16px;border-bottom:1px solid var(--line);}
+  .tab{appearance:none;border:none;background:none;font-family:'Space Grotesk';font-weight:500;font-size:15px;color:var(--ink-faint);padding:9px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s;}
+  .tab:hover{color:var(--ink-soft);}
+  .tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--spark);}
+  .tab .badge{font-family:'Spline Sans Mono';font-size:11px;background:var(--paper-2);color:var(--ink-soft);border-radius:20px;padding:1px 7px;margin-left:6px;}
+
+  /* Panels */
+  .panel{display:none;}
+  .panel.active{display:block;animation:fade .25s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+
+  /* Search form */
+  .search-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;}
+  .field-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;}
+  label.f{display:block;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;margin-bottom:6px;}
+  input[type=text],select{width:100%;font-family:'Inter';font-size:15px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:11px 13px;outline:none;transition:border-color .15s,box-shadow .15s;}
+  input[type=text]:focus,select:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;}
+  .toggle{display:flex;align-items:center;gap:10px;margin-top:16px;cursor:pointer;user-select:none;font-size:14px;color:var(--ink-soft);}
+  .toggle input{width:18px;height:18px;accent-color:var(--teal);cursor:pointer;}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:18px;flex-wrap:wrap;}
+  button.primary{font-family:'Space Grotesk';font-weight:600;font-size:15px;color:#fff;background:var(--ink);border:none;border-radius:10px;padding:12px 22px;cursor:pointer;transition:background .15s,transform .05s;}
+  button.primary:hover{background:#0F1B1E;}
+  button.primary:active{transform:translateY(1px);}
+  button.primary:disabled{opacity:.5;cursor:default;}
+  button.ghost{font-family:'Inter';font-weight:500;font-size:14px;color:var(--ink-soft);background:none;border:1px solid var(--line);border-radius:10px;padding:11px 16px;cursor:pointer;}
+  button.ghost:hover{border-color:var(--ink-faint);color:var(--ink);}
+
+  /* status / messages */
+  .msg{font-size:14px;color:var(--ink-soft);margin:18px 2px 4px;}
+  .msg b{color:var(--ink);font-weight:600;}
+  .hidden-note{font-size:13px;color:var(--ink-faint);}
+  .spinner{display:inline-block;width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--spark);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:7px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .empty{text-align:center;padding:46px 20px;color:var(--ink-faint);}
+  .empty .big{font-family:'Space Grotesk';font-size:17px;color:var(--ink-soft);margin-bottom:6px;}
+
+  /* result + list cards */
+  .cards{margin-top:14px;display:flex;flex-direction:column;gap:10px;}
+  .biz{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;gap:14px;align-items:flex-start;box-shadow:var(--shadow);}
+  .score{flex:none;width:46px;text-align:center;}
+  .score .v{font-family:'Spline Sans Mono';font-weight:600;font-size:21px;line-height:1;color:var(--spark-deep);}
+  .score .lab{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin-top:3px;}
+  .biz-main{flex:1;min-width:0;}
+  .biz-name{font-family:'Space Grotesk';font-weight:600;font-size:16px;letter-spacing:-.01em;margin:0 0 3px;}
+  .biz-meta{font-size:13px;color:var(--ink-soft);display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;padding:2px 9px;border-radius:20px;line-height:1.6;}
+  .chip.nosite{background:var(--spark);color:#3a2a08;}
+  .chip.site{background:var(--grey-soft);color:var(--ink-faint);}
+  .chip.phone{background:var(--teal-soft);color:var(--teal);}
+  .biz-links{font-size:13px;margin-top:7px;display:flex;gap:14px;flex-wrap:wrap;}
+  .biz-links a{color:var(--teal);text-decoration:none;font-weight:500;border-bottom:1px solid transparent;}
+  .biz-links a:hover{border-bottom-color:var(--teal);}
+  .biz-act{flex:none;display:flex;flex-direction:column;gap:6px;align-items:stretch;}
+  .biz-act button{font-family:'Inter';font-weight:500;font-size:13px;border-radius:8px;padding:7px 12px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);white-space:nowrap;}
+  .biz-act button.add{background:var(--teal);color:#fff;border-color:var(--teal);}
+  .biz-act button.add:hover{background:#255955;}
+  .biz-act button.dismiss:hover{border-color:var(--rose);color:var(--rose);}
+
+  /* list controls */
+  .list-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+  .list-bar select{width:auto;padding:8px 11px;font-size:14px;}
+  .spacer{flex:1;}
+  .status-sel{font-family:'Inter';font-size:12.5px;font-weight:600;border-radius:8px;padding:5px 8px;border:1px solid var(--line);cursor:pointer;background:var(--card);}
+  .last-contact-lab{display:flex;flex-direction:column;gap:3px;font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;}
+  .last-contact-in{font-family:'Spline Sans Mono';font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink-soft);border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:var(--card);cursor:pointer;}
+  .last-contact-in:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+  .biz.dead{opacity:.62;}
+  .notes-in{width:100%;margin-top:8px;font-family:'Inter';font-size:13px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:7px 10px;resize:vertical;min-height:34px;}
+  .notes-in:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+  .biz.dupe-card{border-color:var(--spark);box-shadow:0 0 0 2px rgba(232,163,61,.18),var(--shadow);}
+  .dupe-warn{font-size:12px;color:var(--spark-deep);font-weight:600;margin-top:6px;display:flex;align-items:center;gap:5px;}
+  .tag-btns{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+  .tag-btn{font-family:'Inter';font-size:11.5px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid var(--line);background:var(--paper-2);color:var(--ink-soft);cursor:pointer;}
+  .tag-btn:hover{border-color:var(--ink-faint);color:var(--ink);}
+
+  /* table view */
+  .table-scroll{overflow:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 190px);background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);}
+  /* keep the horizontal scrollbar always visible so it's obvious the table scrolls sideways */
+  .table-scroll{scrollbar-width:thin;}
+  .table-scroll::-webkit-scrollbar{height:12px;width:12px;}
+  .table-scroll::-webkit-scrollbar-thumb{background:var(--ink-faint);border-radius:20px;border:3px solid var(--card);}
+  .table-scroll::-webkit-scrollbar-track{background:var(--paper-2);}
+  table.data-table{width:100%;min-width:1760px;border-collapse:collapse;font-size:13.5px;table-layout:fixed;}
+  table.data-table th, table.data-table td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  table.data-table th{position:sticky;top:0;background:var(--paper-2);color:var(--ink-soft);font-family:'Space Grotesk';font-weight:600;font-size:12.5px;letter-spacing:.02em;cursor:pointer;user-select:none;z-index:2;}
+  table.data-table th:hover{color:var(--ink);}
+  table.data-table th.sorted{color:var(--teal);}
+  table.data-table th.col-links{cursor:default;}
+  .sort-arrow{font-size:9px;margin-left:3px;color:var(--teal);}
+  table.data-table tbody tr:hover{background:var(--paper-2);}
+  table.data-table tr.dead-row{opacity:.55;}
+  .col-name{width:190px;}
+  .col-area{width:120px;}
+  .col-cat{width:110px;}
+  .col-status{width:150px;}
+  .col-website{width:90px;}
+  .col-phone{width:140px;}
+  .col-social{width:200px;}
+  .col-score{width:56px;text-align:center;}
+  .col-lastContactedAt{width:150px;}
+  .col-addedAt{width:100px;}
+  .col-notes{width:230px;}
+  .col-message{width:320px;}
+  .col-links{width:150px;}
+  .td-name{font-family:'Space Grotesk';font-weight:600;color:var(--ink);white-space:normal;background:var(--card);}
+  table.data-table tbody tr:hover .td-name{background:var(--paper-2);}
+  /* Name column only pins to the left while it is actually the first column */
+  .data-table.name-sticky .td-name{position:sticky;left:0;z-index:1;box-shadow:1px 0 0 var(--line);}
+  .data-table.name-sticky th.col-name{position:sticky;left:0;z-index:3;box-shadow:1px 0 0 var(--line);}
+
+  /* drag-to-reorder columns */
+  .data-table th[draggable="true"]{cursor:grab;}
+  .data-table th.col-dragging{opacity:.4;}
+  .data-table th.col-drop-target{background:var(--teal-soft);color:var(--teal);box-shadow:inset 3px 0 0 var(--teal);}
+
+  /* status row tints — translucent overlay keeps hover + sticky name column working */
+  tr.st-demo_built td{box-shadow:inset 0 0 0 100vmax var(--rt-yellow);}
+  .name-sticky tr.st-demo_built .td-name{box-shadow:inset 0 0 0 100vmax var(--rt-yellow),1px 0 0 var(--line);}
+  tr.st-message_sent td{box-shadow:inset 0 0 0 100vmax var(--rt-orange);}
+  .name-sticky tr.st-message_sent .td-name{box-shadow:inset 0 0 0 100vmax var(--rt-orange),1px 0 0 var(--line);}
+  tr.st-interested td{box-shadow:inset 0 0 0 100vmax var(--rt-teal);}
+  .name-sticky tr.st-interested .td-name{box-shadow:inset 0 0 0 100vmax var(--rt-teal),1px 0 0 var(--line);}
+  tr.st-quote_sent td{box-shadow:inset 0 0 0 100vmax var(--rt-blue);}
+  .name-sticky tr.st-quote_sent .td-name{box-shadow:inset 0 0 0 100vmax var(--rt-blue),1px 0 0 var(--line);}
+  tr.st-customer td{box-shadow:inset 0 0 0 100vmax var(--rt-green);}
+  .name-sticky tr.st-customer .td-name{box-shadow:inset 0 0 0 100vmax var(--rt-green),1px 0 0 var(--line);}
+  .data-table .status-sel{width:100%;min-width:130px;}
+  .data-table .last-contact-in{width:100%;min-width:130px;}
+  .table-notes-in{font-family:'Inter';font-size:12.5px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);border-radius:7px;padding:5px 8px;width:100%;white-space:normal;}
+  .table-notes-in:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+  .table-message-in{font-family:'Inter';font-size:12.5px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);border-radius:7px;padding:6px 8px;width:100%;white-space:normal;resize:vertical;min-height:40px;line-height:1.45;}
+  .table-message-in:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+  .table-link{color:var(--teal);text-decoration:none;font-weight:500;margin-right:8px;}
+  .table-link:hover{border-bottom:1px solid var(--teal);}
+  .table-remove{font-family:'Inter';font-size:12px;font-weight:500;border-radius:7px;padding:4px 9px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);}
+  .table-remove:hover{border-color:var(--rose);color:var(--rose);}
+  .table-toolbar-search{width:220px;padding:8px 11px;font-size:14px;}
+  .wrap.wide{max-width:1320px;}
+  @media (max-width:760px){ .wrap{max-width:100%;} }
+
+  .foot{margin-top:30px;font-size:12px;color:var(--ink-faint);line-height:1.6;border-top:1px solid var(--line);padding-top:16px;}
+  .foot b{color:var(--ink-soft);}
+  a.link{color:var(--teal);}
+
+  @media (max-width:680px){
+    .field-grid{grid-template-columns:1fr;}
+    .stats{width:100%;overflow-x:auto;}
+    header.app{align-items:flex-start;}
+    .biz{flex-wrap:wrap;}
+    .biz-act{flex-direction:row;width:100%;flex-wrap:wrap;}
+    .biz-act button{flex:1;}
+    .biz-act .status-sel,.biz-act .last-contact-lab{flex:1 1 100%;}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <header class="app">
+    <div class="brand">
+      <svg class="spark-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="20" cy="20" r="19" fill="#1B2A2E"/>
+        <path d="M20 8 L22.6 17.4 L32 20 L22.6 22.6 L20 32 L17.4 22.6 L8 20 L17.4 17.4 Z" fill="#E8A33D"/>
+      </svg>
+      <h1>SparkLab Prospects<small>Local lead finder · UK</small></h1>
+    </div>
+    <div class="header-right">
+      <div class="stats" id="stats"></div>
+      <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" id="tab-find" role="tab" aria-selected="true" onclick="showTab('find')">Find prospects</button>
+    <button class="tab" id="tab-list" role="tab" aria-selected="false" onclick="showTab('list')">My list <span class="badge" id="list-count">0</span></button>
+    <button class="tab" id="tab-table" role="tab" aria-selected="false" onclick="showTab('table')">Table view</button>
+  </div>
+
+  <!-- FIND -->
+  <section class="panel active" id="panel-find">
+    <div class="search-card">
+      <div class="field-grid">
+        <div>
+          <label class="f" for="loc">Town, city or postcode</label>
+          <input type="text" id="loc" placeholder="e.g. Norwich, Cambridge, NR7" autocomplete="off">
+        </div>
+        <div>
+          <label class="f" for="cat">Category</label>
+          <select id="cat">
+            <option value="all">All wellness (recommended)</option>
+            <option value="massage">Massage &amp; bodywork</option>
+            <option value="beauty">Beauty &amp; skincare</option>
+            <option value="therapy">Therapy &amp; counselling</option>
+            <option value="physio">Physio, chiro &amp; osteo</option>
+            <option value="alternative">Acupuncture &amp; holistic</option>
+            <option value="fitness">Yoga, pilates &amp; fitness</option>
+            <option value="hairnails">Hair &amp; nails</option>
+          </select>
+        </div>
+      </div>
+      <div class="row2">
+        <div>
+          <label class="f" for="rad">Search radius</label>
+          <select id="rad">
+            <option value="2000">Within 2 km</option>
+            <option value="5000" selected>Within 5 km</option>
+            <option value="10000">Within 10 km</option>
+            <option value="20000">Within 20 km</option>
+            <option value="40000">Within 40 km</option>
+          </select>
+        </div>
+        <div>
+          <label class="f" for="kw">Name keyword (optional)</label>
+          <input type="text" id="kw" placeholder="e.g. reflexology, sports, holistic" autocomplete="off">
+        </div>
+      </div>
+      <label class="toggle"><input type="checkbox" id="nosite" checked> Only show businesses with no website listed</label>
+      <div class="actions">
+        <button class="primary" id="go" onclick="runSearch()">Find prospects</button>
+        <span id="search-status" class="hidden-note"></span>
+      </div>
+    </div>
+    <div id="find-msg"></div>
+    <div class="cards" id="results"></div>
+  </section>
+
+  <!-- LIST -->
+  <section class="panel" id="panel-list">
+    <div class="list-bar">
+      <select id="filter-status" onchange="renderList()">
+        <option value="active">Active pipeline</option>
+        <option value="all">Everything</option>
+        <option value="new">New / uncontacted</option>
+        <option value="demo_built">Demo built</option>
+        <option value="message_sent">Message sent</option>
+        <option value="interested">Interested</option>
+        <option value="quote_sent">Quote sent</option>
+        <option value="customer">Client</option>
+        <option value="dead">Dead (no website / declined)</option>
+      </select>
+      <select id="sort-by" onchange="renderList()">
+        <option value="added">Newest added</option>
+        <option value="score">Best fit first</option>
+        <option value="name">Name A–Z</option>
+        <option value="contacted">Needs follow-up (oldest contact first)</option>
+      </select>
+      <div class="spacer"></div>
+      <button class="ghost" onclick="importCSV()">Import CSV</button>
+      <button class="ghost" onclick="exportCSV()">Export CSV</button>
+    </div>
+    <div class="cards" id="list"></div>
+  </section>
+
+  <!-- TABLE -->
+  <section class="panel" id="panel-table">
+    <div class="list-bar">
+      <input type="text" id="table-search" class="table-toolbar-search" placeholder="Search name, area, notes…" oninput="renderTable()">
+      <select id="table-filter-status" onchange="renderTable()">
+        <option value="active">Active pipeline</option>
+        <option value="all">Everything</option>
+        <option value="new">New / uncontacted</option>
+        <option value="demo_built">Demo built</option>
+        <option value="message_sent">Message sent</option>
+        <option value="interested">Interested</option>
+        <option value="quote_sent">Quote sent</option>
+        <option value="customer">Client</option>
+        <option value="dead">Dead (no website / declined)</option>
+      </select>
+      <div class="spacer"></div>
+      <button class="ghost" onclick="resetColumns()">Reset columns</button>
+      <button class="ghost" onclick="importCSV()">Import CSV</button>
+      <button class="ghost" onclick="exportCSV()">Export CSV</button>
+    </div>
+    <p class="hidden-note" style="margin:0 2px 8px;">Tip: drag a column heading left or right to rearrange the columns.</p>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead><tr id="table-head"></tr></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="foot" id="foot">
+    <b>How the no-repeat works:</b> every business you Add or Dismiss is remembered on this device. New searches automatically skip anything you've already actioned, and anything marked “Has website” or “Not interested” stays hidden for good.<br>
+    Data from <a class="link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Coverage of small solo practitioners varies by town — if a search looks thin, widen the radius or try “All wellness”, and use the <b>Maps ↗</b> link on each result to verify with your usual Google check.
+  </div>
+</div>
+
+<script>
+/* ---------- state ---------- */
+const STORE_KEY = 'prospects_v1';
+const SETTINGS_KEY = 'settings_v1';
+const THEME_KEY = 'theme_v1';
+let store = {};          // id -> record
+
+const DEAD = new Set(['has_website','said_no','dismissed','archived']);
+const STATUS_LABELS = {
+  new:'New', demo_built:'Demo built', message_sent:'Message sent', interested:'Interested',
+  quote_sent:'Quote sent', customer:'Client',
+  has_website:'Has website', said_no:'Not interested',
+  dismissed:'Dismissed', archived:'Archived'
+};
+
+/* ---------- storage (localStorage) ---------- */
+async function loadStore(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw){ store = JSON.parse(raw); }
+  }catch(e){ store = {}; }
+  // migrate old 'contacted' status (pre Demo built / Message sent split) to 'message_sent'
+  Object.values(store).forEach(r=>{ if(r.status==='contacted') r.status='message_sent'; });
+}
+async function saveStore(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(store)); }
+  catch(e){ console.error('save failed', e); }
+}
+async function loadSettings(){
+  try{
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+async function saveSettings(){
+  const s = { loc:el('loc').value, cat:el('cat').value, rad:el('rad').value, nosite:el('nosite').checked };
+  try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
+}
+
+/* ---------- theme ---------- */
+function applyTheme(mode){
+  document.documentElement.setAttribute('data-theme', mode);
+  try{ localStorage.setItem(THEME_KEY, mode); }catch(e){}
+}
+function toggleTheme(){
+  const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  applyTheme(current==='dark' ? 'light' : 'dark');
+}
+function initTheme(){
+  let saved=null;
+  try{ saved = localStorage.getItem(THEME_KEY); }catch(e){}
+  if(saved==='dark'||saved==='light'){ applyTheme(saved); return; }
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(prefersDark ? 'dark' : 'light');
+}
+initTheme();
+
+/* ---------- helpers ---------- */
+function el(id){ return document.getElementById(id); }
+function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function mapsLink(name, area){ return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent([name,area,'UK'].filter(Boolean).join(' ')); }
+
+/* ---------- category tag sets ---------- */
+const CATEGORIES = {
+  massage:{core:true, filters:['["shop"="massage"]','["leisure"="spa"]','["amenity"="spa"]','["healthcare"="alternative"]["healthcare:speciality"~"massage",i]','["shop"="beauty"]["beauty"~"massage|spa",i]']},
+  beauty:{core:true, filters:['["shop"="beauty"]','["shop"="cosmetics"]','["leisure"="spa"]','["beauty"]']},
+  therapy:{core:true, filters:['["healthcare"="psychotherapist"]','["healthcare"="counselling"]','["healthcare:speciality"~"psychotherapy|counselling|psychology",i]','["office"="therapist"]','["office"="counsellor"]']},
+  physio:{core:true, filters:['["healthcare"="physiotherapist"]','["healthcare"="chiropractor"]','["healthcare"="osteopath"]','["healthcare:speciality"~"physiotherapy|chiropractic|osteopath|podiatry",i]']},
+  alternative:{core:true, filters:['["healthcare"="alternative"]','["healthcare:speciality"~"acupuncture|reflexolog|homeopath|naturopath|herbal|ayurved|reiki|hypno",i]','["shop"="herbalist"]']},
+  fitness:{core:false, filters:['["leisure"="fitness_centre"]','["sport"~"yoga|pilates",i]','["leisure"="sports_centre"]']},
+  hairnails:{core:false, filters:['["shop"="hairdresser"]','["shop"="nails"]','["leisure"="nail_salon"]','["shop"="beauty"]["beauty"~"nails",i]']}
+};
+function coreCategoryFor(tags){
+  for(const k of ['massage','therapy','physio','alternative','beauty']){
+    // rough label only
+  }
+  return null;
+}
+function selectedFilters(catKey){
+  if(catKey==='all'){
+    let f=[]; for(const k in CATEGORIES){ if(CATEGORIES[k].core) f=f.concat(CATEGORIES[k].filters); }
+    return f;
+  }
+  return CATEGORIES[catKey] ? CATEGORIES[catKey].filters : [];
+}
+function isCore(catKey){ return catKey==='all' || (CATEGORIES[catKey] && CATEGORIES[catKey].core); }
+
+/* ---------- geocode ---------- */
+async function geocode(q){
+  const url='https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=gb&limit=1&q='+encodeURIComponent(q);
+  const res=await fetch(url,{headers:{'Accept':'application/json'}});
+  if(!res.ok) throw new Error('geocode http '+res.status);
+  const data=await res.json();
+  if(!data.length) return null;
+  return { lat:parseFloat(data[0].lat), lon:parseFloat(data[0].lon), name:data[0].display_name };
+}
+
+/* ---------- overpass ---------- */
+const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+function buildQuery(filters, kw, lat, lon, rad){
+  let parts=[];
+  const around=`(around:${rad},${lat},${lon})`;
+  filters.forEach(f=>parts.push(`nwr${f}${around};`));
+  if(kw && kw.trim()){
+    const k=kw.trim().replace(/[\\"]/g,'');
+    ['shop','healthcare','office','amenity','leisure'].forEach(base=>{
+      parts.push(`nwr["${base}"]["name"~"${k}",i]${around};`);
+    });
+  }
+  return `[out:json][timeout:25];(${parts.join('')});out center tags 250;`;
+}
+async function overpass(query){
+  let lastErr;
+  for(const ep of OVERPASS){
+    try{
+      const res=await fetch(ep,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(query)});
+      if(!res.ok){ lastErr=new Error('overpass http '+res.status); continue; }
+      const data=await res.json();
+      return data.elements||[];
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr||new Error('overpass failed');
+}
+
+/* ---------- result normalisation ---------- */
+function websiteOf(t){ return t.website||t['contact:website']||t.url||t['contact:url']||''; }
+function phoneOf(t){ return t.phone||t['contact:phone']||t['contact:mobile']||t.mobile||''; }
+function areaOf(t){ return t['addr:city']||t['addr:town']||t['addr:suburb']||t['addr:village']||t['addr:hamlet']||''; }
+function catLabelOf(t){
+  if(t.healthcare) return (t['healthcare:speciality']||t.healthcare).replace(/_/g,' ');
+  if(t.shop) return t.shop.replace(/_/g,' ');
+  if(t.leisure) return t.leisure.replace(/_/g,' ');
+  if(t.office) return t.office.replace(/_/g,' ');
+  if(t.amenity) return t.amenity.replace(/_/g,' ');
+  return '';
+}
+function scoreOf(rec, core){
+  let s = rec.website ? 8 : 55;
+  if(rec.phone) s += 18;
+  if(core) s += 18;
+  return Math.min(99, s);
+}
+
+/* ---------- search ---------- */
+let busy=false;
+async function runSearch(){
+  if(busy) return;
+  const q=el('loc').value.trim();
+  if(!q){ el('loc').focus(); return; }
+  busy=true;
+  el('go').disabled=true;
+  el('search-status').innerHTML='<span class="spinner"></span>Locating '+esc(q)+'…';
+  el('find-msg').innerHTML='';
+  el('results').innerHTML='';
+  saveSettings();
+  try{
+    const geo=await geocode(q);
+    if(!geo){ el('find-msg').innerHTML='<div class="empty"><div class="big">Couldn’t find that place</div>Try a nearby town name or a full postcode.</div>'; finish(); return; }
+    el('search-status').innerHTML='<span class="spinner"></span>Searching businesses near '+esc(geo.name.split(',')[0])+'…';
+    const catKey=el('cat').value;
+    const filters=selectedFilters(catKey);
+    const core=isCore(catKey);
+    const query=buildQuery(filters, el('kw').value, geo.lat, geo.lon, el('rad').value);
+    const elements=await overpass(query);
+
+    // normalise + dedupe within results
+    const seenIds=new Set(); let raw=[];
+    for(const e of elements){
+      if(!e.tags||!e.tags.name) continue;
+      const id=e.type+'/'+e.id;
+      if(seenIds.has(id)) continue; seenIds.add(id);
+      const lat=e.lat||(e.center&&e.center.lat); const lon=e.lon||(e.center&&e.center.lon);
+      const rec={ id, name:e.tags.name, website:websiteOf(e.tags), phone:phoneOf(e.tags),
+        area:areaOf(e.tags), cat:catLabelOf(e.tags), lat, lon, core };
+      raw.push(rec);
+    }
+
+    // filter: already actioned (no repeats) + no-website toggle
+    const onlyNoSite=el('nosite').checked;
+    let alreadyCount=0, siteFiltered=0;
+    let fresh=raw.filter(r=>{
+      if(store[r.id]){ alreadyCount++; return false; }
+      if(onlyNoSite && r.website){ siteFiltered++; return false; }
+      return true;
+    });
+    fresh.forEach(r=>r.score=scoreOf(r,core));
+    fresh.sort((a,b)=>b.score-a.score || a.name.localeCompare(b.name));
+
+    renderResults(fresh, {total:raw.length, already:alreadyCount, siteFiltered, onlyNoSite});
+  }catch(err){
+    el('find-msg').innerHTML='<div class="empty"><div class="big">Search hit a snag</div>The OpenStreetMap servers can be briefly busy. Wait a few seconds and try again.<br><span class="hidden-note">'+esc(err.message||'')+'</span></div>';
+  }
+  finish();
+}
+function finish(){ busy=false; el('go').disabled=false; el('search-status').textContent=''; }
+
+let lastResults=[];
+function renderResults(list, meta){
+  lastResults=list;
+  let note='';
+  const bits=[];
+  if(meta.already) bits.push(`<b>${meta.already}</b> you've already actioned`);
+  if(meta.siteFiltered) bits.push(`<b>${meta.siteFiltered}</b> with a website`);
+  if(bits.length) note=`<span class="hidden-note">Skipped ${bits.join(' and ')}.</span>`;
+
+  if(!list.length){
+    el('find-msg').innerHTML=`<div class="msg"><b>No fresh prospects here.</b> ${note}</div><div class="empty">${meta.total? 'Everything nearby is either already on your list or has a website.':'Nothing matched in this area — try a wider radius or “All wellness”.'}</div>`;
+    el('results').innerHTML=''; return;
+  }
+  el('find-msg').innerHTML=`<div class="msg">Found <b>${list.length}</b> fresh prospect${list.length>1?'s':''}. ${note}</div>
+    <div class="actions" style="margin-top:6px"><button class="ghost" onclick="addAll()">Add all to list</button><button class="ghost" onclick="dismissAll()">Dismiss all</button></div>`;
+  el('results').innerHTML=list.map(r=>bizCard(r,'result')).join('');
+}
+
+/* ---------- card rendering ---------- */
+function normUrl(s){ return (s||'').replace(/^\/\//,'').replace(/^https?:\/\//,'').toLowerCase().replace(/\/$/,'').trim(); }
+function normPhone(s){ return (s||'').replace(/[\s\-().+]/g,''); }
+function normName(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function dupeCheck(r){
+  const rUrl=normUrl(r.website), rPhone=normPhone(r.phone), rName=normName(r.name), rArea=normName(r.area);
+  for(const rec of Object.values(store)){
+    if(rec.id===r.id) continue;
+    if(rUrl  && normUrl(rec.website)  && rUrl===normUrl(rec.website))   return rec.name;
+    if(rPhone && normPhone(rec.phone) && rPhone===normPhone(rec.phone)) return rec.name;
+    if(rName  && normName(rec.name)   && rName===normName(rec.name))    return rec.name;
+    if(rName  && rArea && normName(rec.name) && normName(rec.area) &&
+       rName===normName(rec.name) && rArea===normName(rec.area))        return rec.name;
+  }
+  return null;
+}
+function bizCard(r, mode){
+  const site = r.website
+    ? `<span class="chip site">website ↗</span>`
+    : `<span class="chip nosite">no website</span>`;
+  const phone = r.phone ? `<span class="chip phone">${esc(r.phone)}</span>` : '';
+  const websiteUrl = r.website && /^https?:/.test(r.website) ? r.website : (r.website? 'http://'+r.website : '');
+  const links=[];
+  links.push(`<a href="${mapsLink(r.name, r.area)}" target="_blank" rel="noopener">Maps ↗</a>`);
+  if(websiteUrl) links.push(`<a href="${esc(websiteUrl)}" target="_blank" rel="noopener">Site ↗</a>`);
+  if(r.lat&&r.lon) links.push(`<a href="https://www.openstreetmap.org/${r.id}" target="_blank" rel="noopener">OSM ↗</a>`);
+
+  let actions;
+  if(mode==='result'){
+    actions=`<div class="biz-act">
+      <button class="add" onclick="addOne('${r.id}')">Add to list</button>
+      <button class="dismiss" style="color:var(--teal);border-color:var(--teal-soft);" onclick="markHasWebsite('${r.id}')">Has website</button>
+      <button class="dismiss" onclick="dismissOne('${r.id}')">Dismiss</button>
+    </div>`;
+  }else{
+    const rec=store[r.id];
+    const opts=Object.keys(STATUS_LABELS).map(k=>`<option value="${k}"${rec.status===k?' selected':''}>${STATUS_LABELS[k]}</option>`).join('');
+    const lastContactedVal = rec.lastContactedAt ? new Date(rec.lastContactedAt).toISOString().slice(0,10) : '';
+    actions=`<div class="biz-act">
+      <select class="status-sel" onchange="setStatus('${r.id}', this.value)">${opts}</select>
+      <label class="last-contact-lab">Last contacted
+        <input type="date" class="last-contact-in" value="${lastContactedVal}" onchange="setLastContacted('${r.id}', this.value)">
+      </label>
+      <button class="dismiss" onclick="removeOne('${r.id}')">Remove</button>
+    </div>`;
+  }
+  const tagBtns = `<div class="tag-btns">
+    <button class="tag-btn" onclick="appendTag('${r.id}','Weak website')">Weak website</button>
+    <button class="tag-btn" onclick="appendTag('${r.id}','Clinic')">Clinic</button>
+    <button class="tag-btn" onclick="appendTag('${r.id}','Website down')">Website down</button>
+  </div>`;
+  const notes = mode==='list'
+    ? `<textarea class="notes-in" data-rid="${esc(r.id)}" placeholder="Notes…" oninput="setNote('${r.id}', this.value)">${esc(store[r.id].notes||'')}</textarea>${tagBtns}`
+    : `<textarea class="notes-in" data-rid="${esc(r.id)}" placeholder="Notes (optional) — saved when you add to list…"></textarea>${tagBtns}`;
+  const dupe = mode==='result' ? dupeCheck(r) : null;
+  const dupeWarn = dupe ? `<div class="dupe-warn">⚠️ Already have a match: <b>${esc(dupe)}</b></div>` : '';
+  const dead = mode==='list' && DEAD.has(store[r.id].status) ? ' dead':'';
+  const dupeClass = dupe ? ' dupe-card' : '';
+  const score = (mode==='result'? r.score : scoreOf(r, r.core));
+  return `<div class="biz${dead}${dupeClass}">
+    <div class="score"><div class="v">${score}</div><div class="lab">fit</div></div>
+    <div class="biz-main">
+      <p class="biz-name">${esc(r.name)}</p>
+      <div class="biz-meta">${r.area?esc(r.area)+' · ':''}${r.cat?esc(r.cat):''} ${site} ${phone}</div>
+      <div class="biz-links">${links.join('')}</div>
+      ${dupeWarn}
+      ${notes}
+    </div>
+    ${actions}
+  </div>`;
+}
+
+/* ---------- result actions ---------- */
+function recordFrom(r, status){
+  return { id:r.id, name:r.name, website:r.website, phone:r.phone, area:r.area, cat:r.cat,
+    lat:r.lat, lon:r.lon, core:r.core, status, notes:'', message:'', social:'', addedAt:Date.now(), lastContactedAt:null };
+}
+async function addOne(id){
+  const r=lastResults.find(x=>x.id===id); if(!r) return;
+  const noteEl=document.querySelector(`#results textarea[data-rid="${id}"]`);
+  store[id]=recordFrom(r, r.website?'has_website':'new');
+  store[id].notes=(noteEl?noteEl.value.trim():'');
+  await saveStore(); pruneAndRerender(id);
+}
+async function dismissOne(id){
+  const r=lastResults.find(x=>x.id===id); if(!r) return;
+  store[id]=recordFrom(r,'dismissed');
+  await saveStore(); pruneAndRerender(id);
+}
+async function markHasWebsite(id){
+  const r=lastResults.find(x=>x.id===id); if(!r) return;
+  const noteEl=document.querySelector(`#results textarea[data-rid="${id}"]`);
+  store[id]=recordFrom(r,'has_website');
+  store[id].notes=(noteEl?noteEl.value.trim():'');
+  await saveStore(); pruneAndRerender(id);
+}
+async function addAll(){
+  lastResults.forEach(r=>{
+    if(!store[r.id]){
+      store[r.id]=recordFrom(r, r.website?'has_website':'new');
+      const noteEl=document.querySelector(`#results textarea[data-rid="${r.id}"]`);
+      store[r.id].notes=(noteEl?noteEl.value.trim():'');
+    }
+  });
+  await saveStore(); lastResults=[]; el('results').innerHTML=''; el('find-msg').innerHTML='<div class="msg"><b>Added.</b> Check the My list tab to work through them.</div>'; refreshStats();
+}
+async function dismissAll(){
+  lastResults.forEach(r=>{ if(!store[r.id]) store[r.id]=recordFrom(r,'dismissed'); });
+  await saveStore(); lastResults=[]; el('results').innerHTML=''; el('find-msg').innerHTML='<div class="msg">Cleared. Those won’t show up again.</div>'; refreshStats();
+}
+function pruneAndRerender(id){
+  lastResults=lastResults.filter(x=>x.id!==id);
+  const card=[...document.querySelectorAll('#results .biz')];
+  // simplest: re-render remaining
+  if(lastResults.length){
+    el('results').innerHTML=lastResults.map(r=>bizCard(r,'result')).join('');
+  }else{
+    el('results').innerHTML='';
+    el('find-msg').innerHTML='<div class="msg">All results triaged. Run another search or check <b>My list</b>.</div>';
+  }
+  refreshStats();
+}
+
+/* ---------- list actions ---------- */
+async function setStatus(id, val){
+  if(store[id]){
+    store[id].status=val;
+    // auto-stamp last contacted the first time a message goes out, if not already set
+    if(val==='message_sent' && !store[id].lastContactedAt) store[id].lastContactedAt=Date.now();
+    await saveStore(); renderList(); renderTable(); refreshStats();
+  }
+}
+async function setLastContacted(id, val){
+  if(store[id]){ store[id].lastContactedAt = val ? new Date(val).getTime() : null; await saveStore(); refreshStats(); }
+}
+async function setNote(id, val){ if(store[id]){ store[id].notes=val; await saveStore(); } }
+async function setMessage(id, val){ if(store[id]){ store[id].message=val; await saveStore(); } }
+async function setPhone(id, val){ if(store[id]){ store[id].phone=val.trim(); await saveStore(); refreshStats(); } }
+async function setSocial(id, val){ if(store[id]){ store[id].social=val.trim(); await saveStore(); } }
+async function removeOne(id){ delete store[id]; await saveStore(); renderList(); refreshStats(); }
+function appendTag(id, tag){
+  const ta=document.querySelector(`textarea[data-rid="${id}"]`);
+  if(!ta) return;
+  const sep=(ta.value && !ta.value.endsWith(' ') && ta.value!=='') ? ' ' : '';
+  ta.value=ta.value+sep+tag;
+  if(store[id]){ store[id].notes=ta.value; saveStore(); }
+}
+
+function renderList(){
+  const f=el('filter-status').value;
+  const sort=el('sort-by').value;
+  let arr=Object.values(store);
+  arr=arr.filter(r=>{
+    if(f==='all') return true;
+    if(f==='active') return !DEAD.has(r.status);
+    if(f==='dead') return DEAD.has(r.status);
+    return r.status===f;
+  });
+  if(sort==='name') arr.sort((a,b)=>a.name.localeCompare(b.name));
+  else if(sort==='score') arr.sort((a,b)=>scoreOf(b,b.core)-scoreOf(a,a.core));
+  else if(sort==='contacted') arr.sort((a,b)=>(a.lastContactedAt||0)-(b.lastContactedAt||0));
+  else arr.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
+
+  if(!arr.length){
+    el('list').innerHTML='<div class="empty"><div class="big">Nothing here yet</div>Run a search and add the businesses worth chasing.</div>';
+    return;
+  }
+  el('list').innerHTML=arr.map(r=>bizCard(r,'list')).join('');
+}
+
+/* ---------- stats ---------- */
+function refreshStats(){
+  const arr=Object.values(store);
+  const total=arr.length;
+  const newc=arr.filter(r=>r.status==='new').length;
+  const nosite=arr.filter(r=>!r.website && !DEAD.has(r.status)).length;
+  const contacted=arr.filter(r=>['demo_built','message_sent','interested','quote_sent'].includes(r.status)).length;
+  const cust=arr.filter(r=>r.status==='customer').length;
+  el('stats').innerHTML=`
+    <div class="stat"><div class="n mono">${total}</div><div class="l">On list</div></div>
+    <div class="stat spark"><div class="n mono">${nosite}</div><div class="l">No website</div></div>
+    <div class="stat"><div class="n mono">${newc}</div><div class="l">New</div></div>
+    <div class="stat"><div class="n mono">${contacted}</div><div class="l">In play</div></div>
+    <div class="stat green"><div class="n mono">${cust}</div><div class="l">Clients</div></div>`;
+  el('list-count').textContent=Object.values(store).filter(r=>!DEAD.has(r.status)).length;
+}
+
+/* ---------- table view (sortable spreadsheet-style) ---------- */
+const TABLE_COLS=[
+  {key:'name', label:'Name', get:r=>r.name||'',
+    cell:r=>`<td class="td-name col-name">${esc(r.name)}</td>`},
+  {key:'area', label:'Area', get:r=>r.area||'',
+    cell:r=>`<td class="col-area">${esc(r.area||'')}</td>`},
+  {key:'cat', label:'Category', get:r=>r.cat||'',
+    cell:r=>`<td class="col-cat">${esc(r.cat||'')}</td>`},
+  {key:'status', label:'Status', get:r=>STATUS_LABELS[r.status]||'',
+    cell:r=>{
+      const opts=Object.keys(STATUS_LABELS).map(k=>`<option value="${k}"${r.status===k?' selected':''}>${STATUS_LABELS[k]}</option>`).join('');
+      return `<td class="col-status"><select class="status-sel" onchange="setStatus('${r.id}', this.value)">${opts}</select></td>`;
+    }},
+  {key:'website', label:'Website', get:r=>r.website?1:0,
+    cell:r=>{
+      const websiteUrl=r.website && /^https?:/.test(r.website) ? r.website : (r.website? 'http://'+r.website : '');
+      return `<td class="col-website">${websiteUrl? `<a class="table-link" href="${esc(websiteUrl)}" target="_blank" rel="noopener">Site ↗</a>` : '<span class="chip nosite">no site</span>'}</td>`;
+    }},
+  {key:'phone', label:'Phone', get:r=>r.phone||'',
+    cell:r=>`<td class="col-phone"><input type="tel" class="table-notes-in" value="${esc(r.phone||'')}" placeholder="Phone…" onchange="setPhone('${r.id}', this.value)"></td>`},
+  {key:'social', label:'Social', get:r=>r.social||'',
+    cell:r=>`<td class="col-social"><input type="text" class="table-notes-in" value="${esc(r.social||'')}" placeholder="@handle or link…" onchange="setSocial('${r.id}', this.value)"></td>`},
+  {key:'score', label:'Fit', get:r=>scoreOf(r,r.core),
+    cell:r=>`<td class="col-score">${scoreOf(r,r.core)}</td>`},
+  {key:'lastContactedAt', label:'Last contacted', get:r=>r.lastContactedAt||0,
+    cell:r=>{
+      const lastContactedVal=r.lastContactedAt ? new Date(r.lastContactedAt).toISOString().slice(0,10) : '';
+      return `<td class="col-lastContactedAt"><input type="date" class="last-contact-in" value="${lastContactedVal}" onchange="setLastContacted('${r.id}', this.value)"></td>`;
+    }},
+  {key:'addedAt', label:'Added', get:r=>r.addedAt||0,
+    cell:r=>`<td class="col-addedAt">${r.addedAt ? new Date(r.addedAt).toISOString().slice(0,10) : ''}</td>`},
+  {key:'notes', label:'Notes', get:r=>r.notes||'',
+    cell:r=>`<td class="col-notes"><input type="text" class="table-notes-in" value="${esc(r.notes||'')}" onchange="setNote('${r.id}', this.value)"></td>`},
+  {key:'message', label:'First message', get:r=>r.message||'',
+    cell:r=>`<td class="col-message"><textarea class="table-message-in" placeholder="First message…" oninput="setMessage('${r.id}', this.value)">${esc(r.message||'')}</textarea></td>`},
+  {key:'links', label:'Links', sort:false, get:r=>'',
+    cell:r=>`<td class="col-links"><a class="table-link" href="${mapsLink(r.name,r.area)}" target="_blank" rel="noopener">Maps ↗</a><button class="table-remove" onclick="removeOne('${r.id}')">Remove</button></td>`}
+];
+const COLS_KEY='table_cols_v1';
+let colOrder=TABLE_COLS.map(c=>c.key);
+function colByKey(k){ return TABLE_COLS.find(c=>c.key===k); }
+function saveColOrder(){ try{ localStorage.setItem(COLS_KEY, JSON.stringify(colOrder)); }catch(e){} }
+function loadColOrder(){
+  try{
+    const raw=localStorage.getItem(COLS_KEY);
+    if(!raw) return;
+    const arr=JSON.parse(raw);
+    if(!Array.isArray(arr)) return;
+    const known=new Set(TABLE_COLS.map(c=>c.key));
+    const order=arr.filter(k=>known.has(k));
+    // append any columns added in a newer version that the saved order doesn't know about
+    TABLE_COLS.forEach(c=>{ if(!order.includes(c.key)) order.push(c.key); });
+    colOrder=order;
+  }catch(e){}
+}
+function resetColumns(){ colOrder=TABLE_COLS.map(c=>c.key); saveColOrder(); renderTable(); }
+
+/* drag-to-reorder */
+let dragColKey=null;
+function moveColumn(from, to){
+  if(!from || !to || from===to) return;
+  const order=colOrder.slice();
+  order.splice(order.indexOf(from), 1);
+  order.splice(order.indexOf(to), 0, from); // drop before the column you released on
+  colOrder=order; saveColOrder(); renderTable();
+}
+function setupColumnDrag(){
+  document.querySelectorAll('#table-head th').forEach(th=>{
+    th.addEventListener('dragstart', e=>{
+      dragColKey=th.dataset.key; th.classList.add('col-dragging');
+      e.dataTransfer.effectAllowed='move';
+      try{ e.dataTransfer.setData('text/plain', dragColKey); }catch(_){}
+    });
+    th.addEventListener('dragend', ()=>{
+      th.classList.remove('col-dragging');
+      document.querySelectorAll('#table-head th').forEach(t=>t.classList.remove('col-drop-target'));
+      dragColKey=null;
+    });
+    th.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; th.classList.add('col-drop-target'); });
+    th.addEventListener('dragleave', ()=>th.classList.remove('col-drop-target'));
+    th.addEventListener('drop', e=>{
+      e.preventDefault();
+      th.classList.remove('col-drop-target');
+      moveColumn(dragColKey, th.dataset.key);
+    });
+  });
+}
+// Size the table box to fill the remaining screen so its horizontal scrollbar
+// always sits at the bottom of the visible area (not below the last row).
+function sizeTableHeight(){
+  const box=document.querySelector('.table-scroll');
+  if(!box || !el('panel-table').classList.contains('active')) return;
+  const top=box.getBoundingClientRect().top;
+  box.style.maxHeight=Math.max(240, window.innerHeight - top - 20)+'px';
+}
+let tableSort={key:'addedAt', dir:-1};
+function sortTable(key){
+  if(tableSort.key===key){ tableSort.dir*=-1; }
+  else{ tableSort={key, dir: (key==='addedAt'||key==='lastContactedAt'||key==='score') ? -1 : 1}; }
+  renderTable();
+}
+function renderTable(){
+  const search=(el('table-search').value||'').toLowerCase().trim();
+  const f=el('table-filter-status').value;
+  let arr=Object.values(store);
+  arr=arr.filter(r=>{
+    if(f==='all') return true;
+    if(f==='active') return !DEAD.has(r.status);
+    if(f==='dead') return DEAD.has(r.status);
+    return r.status===f;
+  });
+  if(search){
+    arr=arr.filter(r=>
+      (r.name||'').toLowerCase().includes(search) ||
+      (r.area||'').toLowerCase().includes(search) ||
+      (r.cat||'').toLowerCase().includes(search) ||
+      (r.notes||'').toLowerCase().includes(search)
+    );
+  }
+  const col=colByKey(tableSort.key) || TABLE_COLS[0];
+  arr.sort((a,b)=>{
+    const av=col.get(a), bv=col.get(b);
+    const cmp=(typeof av==='number' && typeof bv==='number') ? (av-bv) : String(av).localeCompare(String(bv));
+    return cmp*tableSort.dir;
+  });
+
+  el('table-head').innerHTML=colOrder.map(key=>{
+    const c=colByKey(key); if(!c) return '';
+    const active=c.key===tableSort.key;
+    const arrow=active ? (tableSort.dir===1?'▲':'▼') : '';
+    const sortable=c.sort!==false;
+    return `<th draggable="true" data-key="${c.key}" class="col-${c.key}${active?' sorted':''}"${sortable?` onclick="sortTable('${c.key}')"`:''}>${c.label}${sortable?`<span class="sort-arrow">${arrow}</span>`:''}</th>`;
+  }).join('');
+  setupColumnDrag();
+
+  // Name column only stays pinned to the left while it is actually the first column
+  const tableEl=el('table-head').closest('table');
+  if(tableEl) tableEl.classList.toggle('name-sticky', colOrder[0]==='name');
+
+  if(!arr.length){
+    el('table-body').innerHTML=`<tr><td colspan="${colOrder.length}"><div class="empty"><div class="big">Nothing here yet</div>Add prospects from Find, or adjust the filters above.</div></td></tr>`;
+    return;
+  }
+  el('table-body').innerHTML=arr.map(r=>tableRow(r)).join('');
+  sizeTableHeight();
+}
+function tableRow(r){
+  const rowClass=DEAD.has(r.status) ? 'dead-row' : 'st-'+r.status;
+  const cells=colOrder.map(key=>{ const c=colByKey(key); return c? c.cell(r) : ''; }).join('');
+  return `<tr class="${rowClass}">${cells}</tr>`;
+}
+
+/* ---------- import / export ---------- */
+function parseCSV(text){
+  const rows=[];
+  let row=[],field='',inQ=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQ){
+      if(c==='"'&&text[i+1]==='"'){field+='"';i++;}
+      else if(c==='"'){inQ=false;}
+      else{field+=c;}
+    }else{
+      if(c==='"'){inQ=true;}
+      else if(c===','){row.push(field);field='';}
+      else if(c==='\n'||c==='\r'){
+        row.push(field);field='';
+        if(row.some(f=>f)){rows.push(row);}row=[];
+        if(c==='\r'&&text[i+1]==='\n')i++;
+      }else{field+=c;}
+    }
+  }
+  if(field||row.length){row.push(field);if(row.some(f=>f))rows.push(row);}
+  return rows;
+}
+function importCSV(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='.csv,text/csv';
+  inp.onchange=async e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const text=await file.text();
+    const rows=parseCSV(text);
+    if(rows.length<2){alert('No data rows found in CSV.');return;}
+    const headers=rows[0].map(h=>h.toLowerCase().trim());
+    const col=k=>headers.indexOf(k);
+    const idIdx=col('osm_id');
+    if(idIdx<0){alert('CSV must have an osm_id column — export first, then re-import.');return;}
+    const labelToKey={};
+    Object.entries(STATUS_LABELS).forEach(([k,v])=>labelToKey[v.toLowerCase()]=k);
+    let updated=0, restored=0;
+    for(let i=1;i<rows.length;i++){
+      const row=rows[i];
+      const get=idx=>(idx>=0?(row[idx]||''):'').trim();
+      const id=get(idIdx); if(!id) continue;
+      const statusRaw=get(col('status'));
+      const statusKey=labelToKey[statusRaw.toLowerCase()]||'new';
+      const notes=get(col('notes'));
+      const message=get(col('message'));
+      const phone=get(col('phone'));
+      const social=get(col('social'));
+      const lastContactedStr=get(col('last_contacted'));
+      const lastContactedAt = lastContactedStr ? (new Date(lastContactedStr).getTime()||null) : null;
+      if(store[id]){
+        // update existing record
+        if(statusRaw){ const k=labelToKey[statusRaw.toLowerCase()]; if(k) store[id].status=k; }
+        if(col('notes')>=0) store[id].notes=notes;
+        if(col('message')>=0) store[id].message=message;
+        if(col('phone')>=0) store[id].phone=phone;
+        if(col('social')>=0) store[id].social=social;
+        if(col('last_contacted')>=0) store[id].lastContactedAt=lastContactedAt;
+        updated++;
+      }else{
+        // restore record that no longer exists in the browser
+        const name=get(col('name')); if(!name) continue;
+        const addedStr=get(col('added'));
+        const addedAt=addedStr?(new Date(addedStr).getTime()||Date.now()):Date.now();
+        store[id]={ id, name, area:get(col('area')), website:get(col('website')),
+          phone, social, cat:'', lat:null, lon:null, core:false,
+          status:statusKey, notes, message, addedAt, lastContactedAt };
+        restored++;
+      }
+    }
+    await saveStore(); renderList(); refreshStats();
+    const parts=[];
+    if(updated) parts.push(`${updated} record${updated!==1?'s':''} updated`);
+    if(restored) parts.push(`${restored} record${restored!==1?'s':''} restored from backup`);
+    alert(parts.length?parts.join(' · '):'No matching records found in CSV.');
+  };
+  inp.click();
+}
+function exportCSV(){
+  const arr=Object.values(store);
+  if(!arr.length){ alert('Nothing to export yet.'); return; }
+  const cols=['name','area','status','website','phone','social','notes','message','last_contacted','maps_link','osm_id','added'];
+  const rows=arr.map(r=>[
+    r.name, r.area, STATUS_LABELS[r.status]||r.status, r.website, r.phone, r.social,
+    (r.notes||'').replace(/\n/g,' '), (r.message||'').replace(/\n/g,' '), (r.lastContactedAt? new Date(r.lastContactedAt).toISOString().slice(0,10):''),
+    mapsLink(r.name,r.area), r.id,
+    r.addedAt? new Date(r.addedAt).toISOString().slice(0,10):''
+  ]);
+  const csv=[cols.join(',')].concat(rows.map(row=>row.map(v=>{
+    v=(v==null?'':String(v)); return /[",\n]/.test(v)? '"'+v.replace(/"/g,'""')+'"':v;
+  }).join(','))).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='sparklab-prospects-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+}
+
+/* ---------- tabs ---------- */
+function showTab(t){
+  el('panel-find').classList.toggle('active', t==='find');
+  el('panel-list').classList.toggle('active', t==='list');
+  el('panel-table').classList.toggle('active', t==='table');
+  el('tab-find').setAttribute('aria-selected', t==='find');
+  el('tab-list').setAttribute('aria-selected', t==='list');
+  el('tab-table').setAttribute('aria-selected', t==='table');
+  el('wrap').classList.toggle('wide', t==='table');
+  if(t==='list') renderList();
+  if(t==='table') renderTable();
+}
+
+/* ---------- init ---------- */
+(async function init(){
+  await loadStore();
+  loadColOrder();
+  const s=await loadSettings();
+  if(s){ el('loc').value=s.loc||''; if(s.cat)el('cat').value=s.cat; if(s.rad)el('rad').value=s.rad; if(typeof s.nosite==='boolean')el('nosite').checked=s.nosite; }
+
+  // Guarantee save before the page unloads (covers tab close, refresh, navigation)
+  window.addEventListener('beforeunload', ()=>{
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify(store)); }catch(e){}
+  });
+
+  refreshStats();
+  el('loc').addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(); });
+  window.addEventListener('resize', sizeTableHeight);
+})();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
