@@ -353,9 +353,9 @@
   <section class="panel" id="panel-list">
     <div class="list-bar">
       <select id="filter-status" onchange="renderList()">
-        <option value="active">Active pipeline</option>
+        <option value="new" selected>New / to action</option>
+        <option value="active">Active pipeline (all live)</option>
         <option value="all">Everything</option>
-        <option value="new">New / uncontacted</option>
         <option value="demo_built">Demo built</option>
         <option value="message_sent">Message sent</option>
         <option value="interested">Interested</option>
@@ -373,6 +373,7 @@
       <button class="ghost" onclick="importCSV()">Import CSV</button>
       <button class="ghost" onclick="exportCSV()">Export CSV</button>
     </div>
+    <p class="hidden-note" id="list-hint" style="margin:0 2px 12px;"></p>
     <div class="cards" id="list"></div>
   </section>
 
@@ -826,8 +827,8 @@ function appendTag(id, tag){
 function renderList(){
   const f=el('filter-status').value;
   const sort=el('sort-by').value;
-  let arr=Object.values(store);
-  arr=arr.filter(r=>{
+  const all=Object.values(store);
+  let arr=all.filter(r=>{
     if(f==='all') return true;
     if(f==='active') return !DEAD.has(r.status);
     if(f==='dead') return DEAD.has(r.status);
@@ -838,8 +839,28 @@ function renderList(){
   else if(sort==='contacted') arr.sort((a,b)=>(a.lastContactedAt||0)-(b.lastContactedAt||0));
   else arr.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
 
+  // The hint explains why progressed businesses aren't cluttering this view:
+  // My list is the fresh queue; anything with a status lives in Table view.
+  const hintEl=el('list-hint');
+  if(hintEl){
+    hintEl.innerHTML = (f==='new')
+      ? 'Your fresh queue — new, uncontacted prospects only. The moment you set a status, a business moves out of here into the <b>Table view</b> pipeline.'
+      : 'Viewing your wider pipeline. Switch back to <b>New / to action</b> for just the fresh queue.';
+  }
+
   if(!arr.length){
-    el('list').innerHTML='<div class="empty"><div class="big">Nothing here yet</div>Run a search and add the businesses worth chasing.</div>';
+    const progressed=all.filter(r=>r.status!=='new' && !DEAD.has(r.status)).length;
+    let msg;
+    if(!all.length){
+      msg='<div class="big">Nothing here yet</div>Run a search and add the businesses worth chasing.';
+    }else if(f==='new'){
+      msg = progressed
+        ? `<div class="big">Queue clear 🎉</div>No new prospects to action. Your ${progressed} in-progress business${progressed>1?'es are':' is'} in the <b>Table view</b> — or run a search to add more.`
+        : '<div class="big">No new prospects</div>Run a search to add more to your queue.';
+    }else{
+      msg='<div class="big">Nothing matches this filter</div>Try “Everything”, or switch back to New / to action.';
+    }
+    el('list').innerHTML=`<div class="empty">${msg}</div>`;
     return;
   }
   el('list').innerHTML=arr.map(r=>bizCard(r,'list')).join('');
@@ -859,7 +880,8 @@ function refreshStats(){
     <div class="stat"><div class="n mono">${newc}</div><div class="l">New</div></div>
     <div class="stat"><div class="n mono">${contacted}</div><div class="l">In play</div></div>
     <div class="stat green"><div class="n mono">${cust}</div><div class="l">Clients</div></div>`;
-  el('list-count').textContent=Object.values(store).filter(r=>!DEAD.has(r.status)).length;
+  // Badge tracks the fresh queue (New) to match what the My list tab now shows.
+  el('list-count').textContent=Object.values(store).filter(r=>r.status==='new').length;
 }
 
 /* ---------- table view (sortable spreadsheet-style) ---------- */
