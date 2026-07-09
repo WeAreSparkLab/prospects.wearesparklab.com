@@ -168,6 +168,7 @@
   .chip.nosite{background:var(--spark);color:#3a2a08;}
   .chip.site{background:var(--grey-soft);color:var(--ink-faint);}
   .chip.phone{background:var(--teal-soft);color:var(--teal);}
+  .chip.type{background:var(--rose-soft);color:var(--rose);}
   .biz-links{font-size:13px;margin-top:7px;display:flex;gap:14px;flex-wrap:wrap;}
   .biz-links a{color:var(--teal);text-decoration:none;font-weight:500;border-bottom:1px solid transparent;}
   .biz-links a:hover{border-bottom-color:var(--teal);}
@@ -445,7 +446,11 @@ async function loadSettings(){
   }catch(e){ return null; }
 }
 async function saveSettings(){
-  const s = { loc:el('loc').value, cat:el('cat').value, rad:el('rad').value, nosite:el('nosite').checked };
+  // Deliberately NOT persisting "nosite" — it's the core protective filter
+  // (hides businesses that already have a website), so every fresh page
+  // load should start with it back on rather than silently staying off
+  // from a previous session.
+  const s = { loc:el('loc').value, cat:el('cat').value, rad:el('rad').value };
   try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
 }
 
@@ -482,11 +487,50 @@ const CATEGORIES = {
   fitness:{core:false, filters:['["leisure"="fitness_centre"]','["sport"~"yoga|pilates",i]','["leisure"="sports_centre"]']},
   hairnails:{core:false, filters:['["shop"="hairdresser"]','["shop"="nails"]','["leisure"="nail_salon"]','["shop"="beauty"]["beauty"~"nails",i]']}
 };
-function coreCategoryFor(tags){
-  for(const k of ['massage','therapy','physio','alternative','beauty']){
-    // rough label only
-  }
+const TYPE_LABELS = {
+  massage:'Massage & bodywork', beauty:'Beauty & skincare', therapy:'Therapy & counselling',
+  physio:'Physio, chiro & osteo', alternative:'Acupuncture & holistic',
+  fitness:'Yoga, pilates & fitness', hairnails:'Hair & nails'
+};
+// The genuine "wellness practice" buckets — hands-on / clinical practitioners.
+// Beauty, hair & nails and fitness deliberately sit OUTSIDE this set so that
+// grooming salons (which OSM floods under shop=beauty) don't get the "core"
+// score bonus, and therefore sort BELOW real wellness in an All-wellness search.
+const CORE_BUCKETS = new Set(['massage','therapy','physio','alternative']);
+function isWellness(t){ return CORE_BUCKETS.has(bucketOf(t)); }
+// Classifies a raw OSM tag set into one of the app's own category buckets,
+// mirroring the logic in CATEGORIES above so results always show a
+// business "type" that matches the language used in the Category dropdown,
+// rather than a raw (and often blank) OSM tag value.
+function bucketOf(t){
+  const hc=(t.healthcare||'').toLowerCase();
+  const hcs=(t['healthcare:speciality']||'').toLowerCase();
+  const shop=(t.shop||'').toLowerCase();
+  const leisure=(t.leisure||'').toLowerCase();
+  const office=(t.office||'').toLowerCase();
+  const amenity=(t.amenity||'').toLowerCase();
+  const sport=(t.sport||'').toLowerCase();
+  const beauty=(t.beauty||'').toLowerCase();
+
+  // Grooming salons — nails, brows, lashes, tanning, waxing, hair removal —
+  // are overwhelmingly tagged shop=beauty in OSM. Catch them here so they are
+  // classified as "Hair & nails" (non-core) rather than passing through as
+  // generic "beauty" and outranking real wellness practices.
+  if(shop==='hairdresser'||shop==='nails'||leisure==='nail_salon'||
+     /nail|manicure|pedicure|eyebrow|\bbrow|lash|eyelash|tanning|\btan\b|waxing|hair_removal|threading/.test(beauty)) return 'hairnails';
+  if(leisure==='fitness_centre'||leisure==='sports_centre'||/yoga|pilates/.test(sport)) return 'fitness';
+  if(hc==='alternative'||/acupunctur|reflexolog|homeopath|naturopath|herbal|ayurved|reiki|hypno/.test(hcs)||shop==='herbalist') return 'alternative';
+  if(hc==='physiotherapist'||hc==='chiropractor'||hc==='osteopath'||/physiotherapy|chiropractic|osteopath|podiatry/.test(hcs)) return 'physio';
+  if(hc==='psychotherapist'||hc==='counselling'||office==='therapist'||office==='counsellor'||/psychotherapy|counselling|psychology/.test(hcs)) return 'therapy';
+  if(shop==='massage'||leisure==='spa'||amenity==='spa'||/massage/.test(hcs)||beauty.includes('massage')||beauty.includes('spa')) return 'massage';
+  if(shop==='beauty'||shop==='cosmetics'||beauty) return 'beauty';
   return null;
+}
+function typeLabelOf(t){
+  const b=bucketOf(t);
+  if(b) return TYPE_LABELS[b];
+  const raw=catLabelOf(t);
+  return raw || '';
 }
 function selectedFilters(catKey){
   if(catKey==='all'){
@@ -519,7 +563,7 @@ function buildQuery(filters, kw, lat, lon, rad){
       parts.push(`nwr["${base}"]["name"~"${k}",i]${around};`);
     });
   }
-  return `[out:json][timeout:25];(${parts.join('')});out center tags 250;`;
+  return `[out:json][timeout:25];(${parts.join('')});out center tags 500;`;
 }
 async function overpass(query){
   let lastErr;
@@ -571,7 +615,6 @@ async function runSearch(){
     el('search-status').innerHTML='<span class="spinner"></span>Searching businesses near '+esc(geo.name.split(',')[0])+'…';
     const catKey=el('cat').value;
     const filters=selectedFilters(catKey);
-    const core=isCore(catKey);
     const query=buildQuery(filters, el('kw').value, geo.lat, geo.lon, el('rad').value);
     const elements=await overpass(query);
 
@@ -582,8 +625,11 @@ async function runSearch(){
       const id=e.type+'/'+e.id;
       if(seenIds.has(id)) continue; seenIds.add(id);
       const lat=e.lat||(e.center&&e.center.lat); const lon=e.lon||(e.center&&e.center.lon);
+      // Score "core" per business from its own category, not once for the whole
+      // search — otherwise a nail bar and an osteopath get the same bonus and
+      // sort identically. This is what pushes real wellness to the top.
       const rec={ id, name:e.tags.name, website:websiteOf(e.tags), phone:phoneOf(e.tags),
-        area:areaOf(e.tags), cat:catLabelOf(e.tags), lat, lon, core };
+        area:areaOf(e.tags), cat:typeLabelOf(e.tags), lat, lon, core:isWellness(e.tags) };
       raw.push(rec);
     }
 
@@ -595,10 +641,11 @@ async function runSearch(){
       if(onlyNoSite && r.website){ siteFiltered++; return false; }
       return true;
     });
-    fresh.forEach(r=>r.score=scoreOf(r,core));
+    fresh.forEach(r=>r.score=scoreOf(r,r.core));
     fresh.sort((a,b)=>b.score-a.score || a.name.localeCompare(b.name));
 
-    renderResults(fresh, {total:raw.length, already:alreadyCount, siteFiltered, onlyNoSite});
+    const shownWithSite=fresh.filter(r=>r.website).length;
+    renderResults(fresh, {total:raw.length, already:alreadyCount, siteFiltered, onlyNoSite, shownWithSite});
   }catch(err){
     el('find-msg').innerHTML='<div class="empty"><div class="big">Search hit a snag</div>The OpenStreetMap servers can be briefly busy. Wait a few seconds and try again.<br><span class="hidden-note">'+esc(err.message||'')+'</span></div>';
   }
@@ -619,7 +666,10 @@ function renderResults(list, meta){
     el('find-msg').innerHTML=`<div class="msg"><b>No fresh prospects here.</b> ${note}</div><div class="empty">${meta.total? 'Everything nearby is either already on your list or has a website.':'Nothing matched in this area — try a wider radius or “All wellness”.'}</div>`;
     el('results').innerHTML=''; return;
   }
-  el('find-msg').innerHTML=`<div class="msg">Found <b>${list.length}</b> fresh prospect${list.length>1?'s':''}. ${note}</div>
+  const siteNote = (!meta.onlyNoSite && meta.shownWithSite)
+    ? `<div class="hidden-note" style="margin-top:4px">Filter is off, so this includes <b>${meta.shownWithSite}</b> that already ${meta.shownWithSite>1?'have':'has a'} website${meta.shownWithSite>1?'s':''} — tick “no website listed” above to hide ${meta.shownWithSite>1?'them':'it'}.</div>`
+    : '';
+  el('find-msg').innerHTML=`<div class="msg">Found <b>${list.length}</b> fresh prospect${list.length>1?'s':''}. ${note}</div>${siteNote}
     <div class="actions" style="margin-top:6px"><button class="ghost" onclick="addAll()">Add all to list</button><button class="ghost" onclick="dismissAll()">Dismiss all</button></div>`;
   el('results').innerHTML=list.map(r=>bizCard(r,'result')).join('');
 }
@@ -645,6 +695,7 @@ function bizCard(r, mode){
     ? `<span class="chip site">website ↗</span>`
     : `<span class="chip nosite">no website</span>`;
   const phone = r.phone ? `<span class="chip phone">${esc(r.phone)}</span>` : '';
+  const type = r.cat ? `<span class="chip type">${esc(r.cat)}</span>` : '';
   const websiteUrl = r.website && /^https?:/.test(r.website) ? r.website : (r.website? 'http://'+r.website : '');
   const links=[];
   links.push(`<a href="${mapsLink(r.name, r.area)}" target="_blank" rel="noopener">Maps ↗</a>`);
@@ -687,7 +738,7 @@ function bizCard(r, mode){
     <div class="score"><div class="v">${score}</div><div class="lab">fit</div></div>
     <div class="biz-main">
       <p class="biz-name">${esc(r.name)}</p>
-      <div class="biz-meta">${r.area?esc(r.area)+' · ':''}${r.cat?esc(r.cat):''} ${site} ${phone}</div>
+      <div class="biz-meta">${r.area?esc(r.area)+' · ':''}${type} ${site} ${phone}</div>
       <div class="biz-links">${links.join('')}</div>
       ${dupeWarn}
       ${notes}
@@ -1013,6 +1064,7 @@ function importCSV(){
       const social=get(col('social'));
       const lastContactedStr=get(col('last_contacted'));
       const lastContactedAt = lastContactedStr ? (new Date(lastContactedStr).getTime()||null) : null;
+      const type=get(col('type'));
       if(store[id]){
         // update existing record
         if(statusRaw){ const k=labelToKey[statusRaw.toLowerCase()]; if(k) store[id].status=k; }
@@ -1020,6 +1072,7 @@ function importCSV(){
         if(col('message')>=0) store[id].message=message;
         if(col('phone')>=0) store[id].phone=phone;
         if(col('social')>=0) store[id].social=social;
+        if(col('type')>=0 && type) store[id].cat=type;
         if(col('last_contacted')>=0) store[id].lastContactedAt=lastContactedAt;
         updated++;
       }else{
@@ -1028,7 +1081,7 @@ function importCSV(){
         const addedStr=get(col('added'));
         const addedAt=addedStr?(new Date(addedStr).getTime()||Date.now()):Date.now();
         store[id]={ id, name, area:get(col('area')), website:get(col('website')),
-          phone, social, cat:'', lat:null, lon:null, core:false,
+          phone, social, cat:type||'', lat:null, lon:null, core:false,
           status:statusKey, notes, message, addedAt, lastContactedAt };
         restored++;
       }
@@ -1044,9 +1097,9 @@ function importCSV(){
 function exportCSV(){
   const arr=Object.values(store);
   if(!arr.length){ alert('Nothing to export yet.'); return; }
-  const cols=['name','area','status','website','phone','social','notes','message','last_contacted','maps_link','osm_id','added'];
+  const cols=['name','area','type','status','website','phone','social','notes','message','last_contacted','maps_link','osm_id','added'];
   const rows=arr.map(r=>[
-    r.name, r.area, STATUS_LABELS[r.status]||r.status, r.website, r.phone, r.social,
+    r.name, r.area, r.cat||'', STATUS_LABELS[r.status]||r.status, r.website, r.phone, r.social,
     (r.notes||'').replace(/\n/g,' '), (r.message||'').replace(/\n/g,' '), (r.lastContactedAt? new Date(r.lastContactedAt).toISOString().slice(0,10):''),
     mapsLink(r.name,r.area), r.id,
     r.addedAt? new Date(r.addedAt).toISOString().slice(0,10):''
@@ -1079,7 +1132,8 @@ function showTab(t){
   await loadStore();
   loadColOrder();
   const s=await loadSettings();
-  if(s){ el('loc').value=s.loc||''; if(s.cat)el('cat').value=s.cat; if(s.rad)el('rad').value=s.rad; if(typeof s.nosite==='boolean')el('nosite').checked=s.nosite; }
+  if(s){ el('loc').value=s.loc||''; if(s.cat)el('cat').value=s.cat; if(s.rad)el('rad').value=s.rad; }
+  el('nosite').checked=true; // always start protective — see saveSettings note
 
   // Guarantee save before the page unloads (covers tab close, refresh, navigation)
   window.addEventListener('beforeunload', ()=>{
