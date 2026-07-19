@@ -420,6 +420,14 @@ const SETTINGS_KEY = 'settings_v1';
 const THEME_KEY = 'theme_v1';
 let store = {};          // id -> record
 
+/* ---------- cloud config (Supabase) ----------
+   The publishable key is safe to ship publicly: the database has row-level
+   security, so it only ever exposes the data of the signed-in account. */
+const SB_URL = 'https://ulwwokctptrugpsjeloo.supabase.co';
+const SB_ANON = 'sb_publishable_D3ga4nrbAMHcYq2MB0lFYw_CxjPqGq6';
+const SB_SESSION_KEY = 'sb_session_v1';
+const SB_EMAIL_KEY = 'sb_email_v1';
+
 const DEAD = new Set(['has_website','said_no','dismissed','archived']);
 const STATUS_LABELS = {
   new:'New', demo_built:'Demo built', message_sent:'Message sent', interested:'Interested',
@@ -462,10 +470,14 @@ function updateSaveIndicator(blocked){
   if(blocked){
     el2.textContent = `⚠ Save blocked — list would go to 0, left untouched`;
     el2.style.color = '#c0392b';
-  } else {
-    el2.textContent = `Saved: ${n} ${n===1?'business':'businesses'} · ${time}`;
-    el2.style.color = '';
+    return;
   }
+  let cloud;
+  if(!cloudLoggedIn())      cloud = ' · ⚠ not signed in';
+  else if(cloudOnline)      cloud = ' · ☁ synced';
+  else                      cloud = ' · ☁ offline (saved on device)';
+  el2.textContent = `Saved: ${n} ${n===1?'business':'businesses'} · ${time}${cloud}`;
+  el2.style.color = '';
 }
 
 async function saveStore(){
@@ -491,6 +503,7 @@ async function saveStore(){
     }
   }catch(e){ console.error('save failed', e); }
   updateSaveIndicator(false);
+  schedulePush();   // mirror the change up to the cloud (debounced, offline-safe)
 }
 async function loadSettings(){
   try{
@@ -505,6 +518,242 @@ async function saveSettings(){
   // from a previous session.
   const s = { loc:el('loc').value, cat:el('cat').value, rad:el('rad').value };
   try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
+  schedulePush();
+}
+
+/* ---------- cloud sync (Supabase, plain fetch, offline-friendly) ----------
+   localStorage stays the instant, offline-first copy. On top of it we keep a
+   cloud copy so the list survives a wiped browser, a new laptop, or a Windows
+   update. Cloud is treated as the shared source of truth across devices, but
+   we merge rather than replace, so a record is never dropped. */
+let cloudSession = null;   // { access_token, refresh_token, user_id, email }
+let cloudOnline  = true;   // last known connectivity to Supabase
+let pushTimer    = null;
+
+function cloudLoggedIn(){ return !!(cloudSession && cloudSession.refresh_token); }
+
+function loadCloudSession(){
+  try{ const raw = localStorage.getItem(SB_SESSION_KEY); cloudSession = raw ? JSON.parse(raw) : null; }
+  catch(e){ cloudSession = null; }
+}
+function saveCloudSession(){
+  try{
+    if(cloudSession){
+      localStorage.setItem(SB_SESSION_KEY, JSON.stringify(cloudSession));
+      if(cloudSession.email) localStorage.setItem(SB_EMAIL_KEY, cloudSession.email);
+    } else {
+      localStorage.removeItem(SB_SESSION_KEY);
+    }
+  }catch(e){}
+}
+
+async function cloudLogin(email, password){
+  const r = await fetch(`${SB_URL}/auth/v1/token?grant_type=password`, {
+    method:'POST',
+    headers:{ apikey:SB_ANON, 'Content-Type':'application/json' },
+    body: JSON.stringify({ email:(email||'').trim(), password })
+  });
+  if(!r.ok){
+    let msg = 'Login failed';
+    try{ const j = await r.json(); msg = j.error_description || j.msg || j.error || msg; }catch(e){}
+    throw new Error(msg);
+  }
+  const j = await r.json();
+  cloudSession = { access_token:j.access_token, refresh_token:j.refresh_token, user_id:j.user.id, email:j.user.email };
+  saveCloudSession();
+  cloudOnline = true;
+}
+
+// Rotate the short-lived access token. Only clears the session when the refresh
+// token is genuinely rejected (so a network blip never logs the user out).
+async function cloudRefresh(){
+  if(!cloudSession || !cloudSession.refresh_token) return false;
+  try{
+    const r = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method:'POST',
+      headers:{ apikey:SB_ANON, 'Content-Type':'application/json' },
+      body: JSON.stringify({ refresh_token: cloudSession.refresh_token })
+    });
+    if(!r.ok){
+      if(r.status === 400 || r.status === 401){ cloudSession = null; saveCloudSession(); }
+      return false;
+    }
+    const j = await r.json();
+    cloudSession = { access_token:j.access_token, refresh_token:j.refresh_token, user_id:j.user.id, email:j.user.email };
+    saveCloudSession(); cloudOnline = true;
+    return true;
+  }catch(e){ cloudOnline = false; return false; }
+}
+
+function cloudLogout(){
+  cloudSession = null; saveCloudSession();
+  renderAccountBar(); updateSaveIndicator(false);
+  showLoginOverlay();
+}
+
+// Authenticated REST/Auth call with one automatic token refresh on 401.
+async function cloudApi(path, opts={}, _retried){
+  if(!cloudSession) throw new Error('not logged in');
+  const headers = Object.assign({
+    apikey: SB_ANON,
+    Authorization: 'Bearer ' + cloudSession.access_token
+  }, opts.headers || {});
+  const r = await fetch(`${SB_URL}${path}`, Object.assign({}, opts, { headers }));
+  if(r.status === 401 && !_retried){
+    if(await cloudRefresh()) return cloudApi(path, opts, true);
+  }
+  return r;
+}
+
+async function cloudPull(){
+  const r = await cloudApi('/rest/v1/user_data?select=store,settings&limit=1', { method:'GET' });
+  if(!r.ok){ cloudOnline = false; return null; }
+  cloudOnline = true;
+  const rows = await r.json();
+  if(!rows || !rows.length) return { store:{}, settings:null, empty:true };
+  return { store: rows[0].store || {}, settings: rows[0].settings || null, empty:false };
+}
+
+async function cloudPush(){
+  if(!cloudLoggedIn()) return;
+  const keys = Object.keys(store);
+  // Same safety rule as local: never overwrite a non-empty cloud copy with an empty store.
+  if(keys.length === 0){
+    const cur = await cloudPull().catch(()=>null);
+    if(cur && !cur.empty && Object.keys(cur.store).length > 0){
+      console.warn('cloudPush: refused to overwrite non-empty cloud with an empty store');
+      updateSaveIndicator(false);
+      return;
+    }
+  }
+  let settings = {};
+  try{ settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; }catch(e){}
+  try{
+    const r = await cloudApi('/rest/v1/user_data?on_conflict=user_id', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Prefer:'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ user_id: cloudSession.user_id, store, settings, updated_at: new Date().toISOString() }),
+      keepalive: true
+    });
+    cloudOnline = r.ok;
+  }catch(e){ cloudOnline = false; }
+  updateSaveIndicator(false);
+}
+
+function schedulePush(){
+  if(!cloudLoggedIn()) return;
+  if(pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(()=>{ pushTimer = null; cloudPush(); }, 1200);
+}
+
+// Union merge: keep every local-only record, let the cloud win on shared keys.
+// Nothing is ever dropped, so a stale device can't erase newer additions.
+function mergeStores(localStore, cloudStore){
+  return Object.assign({}, localStore || {}, cloudStore || {});
+}
+
+// Pull the cloud copy, merge it with whatever is local, then push the result.
+async function syncNow(){
+  if(!cloudLoggedIn()) return;
+  let pulled = null;
+  try{ pulled = await cloudPull(); }catch(e){ pulled = null; }
+  if(pulled && !pulled.empty){
+    store = mergeStores(store, pulled.store);
+    await saveStore();                 // persist merged result locally (guarded)
+    if(pulled.settings){
+      try{
+        if(!localStorage.getItem(SETTINGS_KEY)){
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(pulled.settings));
+        }
+      }catch(e){}
+    }
+  }
+  await cloudPush();                    // upload merged / first-time state
+  refreshStats();
+  if(typeof renderList  === 'function') renderList();
+  if(typeof renderTable === 'function') renderTable();
+  updateSaveIndicator(false);
+}
+
+/* ---------- login overlay + account bar ---------- */
+function ensureLoginOverlay(){
+  if(document.getElementById('login-overlay')) return;
+  const o = document.createElement('div');
+  o.id = 'login-overlay';
+  o.style.cssText = 'position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,0.78);backdrop-filter:blur(4px);';
+  o.innerHTML =
+    '<div style="background:#fff;color:#0f172a;width:min(360px,92vw);border-radius:14px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.35);font-family:inherit;">' +
+      '<div style="font-weight:700;font-size:18px;margin-bottom:4px;">Sign in</div>' +
+      '<div style="font-size:13px;opacity:0.7;margin-bottom:16px;">Your prospect list is saved to the cloud so you never lose it again.</div>' +
+      '<input id="login-email" type="email" placeholder="Email" autocomplete="username" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;">' +
+      '<input id="login-pw" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;">' +
+      '<button id="login-btn" style="width:100%;padding:11px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Log in</button>' +
+      '<div id="login-err" style="color:#c0392b;font-size:13px;margin-top:10px;min-height:18px;"></div>' +
+      '<div style="text-align:center;margin-top:6px;"><a href="#" id="login-skip" style="font-size:12px;color:#64748b;text-decoration:underline;">Continue without signing in</a></div>' +
+    '</div>';
+  document.body.appendChild(o);
+  document.getElementById('login-skip').addEventListener('click', e=>{
+    // Escape hatch so a forgotten password never locks anyone out of their
+    // local data. The list stays saved on this device; it just isn't backed up.
+    e.preventDefault(); hideLoginOverlay(); updateSaveIndicator(false);
+  });
+  const doLogin = async ()=>{
+    const em = document.getElementById('login-email').value;
+    const pw = document.getElementById('login-pw').value;
+    const errEl = document.getElementById('login-err');
+    const btn = document.getElementById('login-btn');
+    errEl.textContent = ''; btn.disabled = true; btn.textContent = 'Logging in…';
+    try{
+      await cloudLogin(em, pw);
+      hideLoginOverlay();
+      renderAccountBar();
+      await syncNow();
+    }catch(e){
+      errEl.textContent = e.message || 'Login failed';
+    }finally{ btn.disabled = false; btn.textContent = 'Log in'; }
+  };
+  document.getElementById('login-btn').addEventListener('click', doLogin);
+  document.getElementById('login-pw').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+}
+function showLoginOverlay(){
+  ensureLoginOverlay();
+  document.getElementById('login-overlay').style.display = 'flex';
+  const emEl = document.getElementById('login-email');
+  if(emEl && !emEl.value){ try{ emEl.value = localStorage.getItem(SB_EMAIL_KEY) || ''; }catch(e){} }
+  (emEl && !emEl.value ? emEl : document.getElementById('login-pw')).focus();
+}
+function hideLoginOverlay(){ const o = document.getElementById('login-overlay'); if(o) o.style.display = 'none'; }
+
+function renderAccountBar(){
+  let bar = document.getElementById('account-bar');
+  if(!bar){
+    bar = document.createElement('div');
+    bar.id = 'account-bar';
+    bar.style.cssText = 'font-size:11px;opacity:0.6;text-align:right;margin-top:2px;';
+    const si = document.getElementById('save-indicator');
+    if(si && si.parentNode) si.parentNode.insertBefore(bar, si.nextSibling);
+    else document.body.appendChild(bar);
+  }
+  if(cloudLoggedIn()){
+    bar.innerHTML = `${cloudSession.email} · <a href="#" id="acct-pw" style="color:inherit;text-decoration:underline;">Change password</a> · <a href="#" id="acct-out" style="color:inherit;text-decoration:underline;">Log out</a>`;
+    bar.querySelector('#acct-pw').onclick  = e=>{ e.preventDefault(); changePassword(); };
+    bar.querySelector('#acct-out').onclick = e=>{ e.preventDefault(); cloudLogout(); };
+  } else {
+    bar.innerHTML = '';
+  }
+}
+
+async function changePassword(){
+  const np = prompt('Enter a new password (at least 6 characters):');
+  if(np == null) return;
+  if(np.length < 6){ alert('Password must be at least 6 characters.'); return; }
+  try{
+    const r = await cloudApi('/auth/v1/user', {
+      method:'PUT', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ password: np })
+    });
+    if(r.ok){ alert('Password changed.'); }
+    else { const j = await r.json().catch(()=>({})); alert('Could not change password: ' + (j.msg || j.error_description || r.status)); }
+  }catch(e){ alert('Could not change password: ' + e.message); }
 }
 
 /* ---------- theme ---------- */
@@ -1203,11 +1452,13 @@ function showTab(t){
 
 /* ---------- init ---------- */
 (async function init(){
-  await loadStore();
+  await loadStore();          // local first — instant and offline-safe
+  loadCloudSession();
   loadColOrder();
   const s=await loadSettings();
   if(s){ el('loc').value=s.loc||''; if(s.cat)el('cat').value=s.cat; if(s.rad)el('rad').value=s.rad; }
   el('nosite').checked=true; // always start protective — see saveSettings note
+  renderAccountBar();
   updateSaveIndicator(false); // show current state immediately, so an unexpected 0 is visible right away
 
   // Guarantee save before the page unloads (covers tab close, refresh, navigation).
@@ -1230,6 +1481,23 @@ function showTab(t){
   refreshStats();
   el('loc').addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(); });
   window.addEventListener('resize', sizeTableHeight);
+
+  // Flush any pending cloud save when the tab is hidden or closing (keepalive
+  // lets the request finish even as the page goes away).
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState==='hidden' && pushTimer){ clearTimeout(pushTimer); pushTimer=null; cloudPush(); }
+  });
+  // Re-sync automatically when connectivity comes back.
+  window.addEventListener('online', ()=>{ if(cloudLoggedIn()) syncNow().catch(()=>{}); });
+
+  // Cloud: restore a stored session and sync in the background; otherwise ask to log in.
+  if(cloudLoggedIn()){
+    await cloudRefresh();               // validate/rotate token (only clears session if truly rejected)
+    if(cloudSession){ renderAccountBar(); syncNow().catch(()=>{}); }
+    else { showLoginOverlay(); }
+  } else {
+    showLoginOverlay();
+  }
 })();
 
 if('serviceWorker' in navigator){
