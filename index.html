@@ -288,6 +288,7 @@
     </div>
     <div class="header-right">
       <div class="stats" id="stats"></div>
+      <div id="save-indicator" style="font-size:11px;opacity:0.6;text-align:right;margin-top:2px;"></div>
       <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode">
         <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
         <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
@@ -428,17 +429,68 @@ const STATUS_LABELS = {
 };
 
 /* ---------- storage (localStorage) ---------- */
+const BACKUP_KEY = 'prospects_v1_backup';
+let storeLoadedOk = false; // true only if we genuinely read+parsed existing data (or confirmed there truly was none)
+
 async function loadStore(){
   try{
     const raw = localStorage.getItem(STORE_KEY);
-    if(raw){ store = JSON.parse(raw); }
-  }catch(e){ store = {}; }
+    if(raw){
+      store = JSON.parse(raw);
+      storeLoadedOk = true;
+    } else {
+      // Key genuinely absent (first-ever run, or real empty state) rather than a failed read.
+      store = {};
+      storeLoadedOk = true;
+    }
+  }catch(e){
+    // JSON.parse failed on existing data — this is corruption, NOT an empty list.
+    // Do not treat as empty; leave storeLoadedOk=false so saveStore() refuses to persist over it.
+    console.error('loadStore parse failed, protecting existing data', e);
+    store = {};
+    storeLoadedOk = false;
+  }
   // migrate old 'contacted' status (pre Demo built / Message sent split) to 'message_sent'
   Object.values(store).forEach(r=>{ if(r.status==='contacted') r.status='message_sent'; });
 }
+
+function updateSaveIndicator(blocked){
+  const n = Object.keys(store).length;
+  const time = new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const el2 = document.getElementById('save-indicator');
+  if(!el2) return;
+  if(blocked){
+    el2.textContent = `⚠ Save blocked — list would go to 0, left untouched`;
+    el2.style.color = '#c0392b';
+  } else {
+    el2.textContent = `Saved: ${n} ${n===1?'business':'businesses'} · ${time}`;
+    el2.style.color = '';
+  }
+}
+
 async function saveStore(){
-  try{ localStorage.setItem(STORE_KEY, JSON.stringify(store)); }
-  catch(e){ console.error('save failed', e); }
+  const keys = Object.keys(store);
+  if(keys.length === 0){
+    // Guard: never let an empty in-memory store overwrite non-empty existing data.
+    // This is what protects against the exact bug that wiped the list previously —
+    // a bad/partial load leaving `store` empty in memory, silently saved over real data.
+    let existing = null;
+    try{ existing = localStorage.getItem(STORE_KEY); }catch(e){}
+    if(existing && existing !== '{}' && existing !== 'null'){
+      console.warn('saveStore: refused to overwrite non-empty storage with an empty store.');
+      updateSaveIndicator(true);
+      return;
+    }
+  }
+  try{
+    const json = JSON.stringify(store);
+    localStorage.setItem(STORE_KEY, json);
+    if(keys.length > 0){
+      // Rolling backup: only ever updated on a genuinely non-empty save.
+      localStorage.setItem(BACKUP_KEY, json);
+    }
+  }catch(e){ console.error('save failed', e); }
+  updateSaveIndicator(false);
 }
 async function loadSettings(){
   try{
@@ -1156,10 +1208,23 @@ function showTab(t){
   const s=await loadSettings();
   if(s){ el('loc').value=s.loc||''; if(s.cat)el('cat').value=s.cat; if(s.rad)el('rad').value=s.rad; }
   el('nosite').checked=true; // always start protective — see saveSettings note
+  updateSaveIndicator(false); // show current state immediately, so an unexpected 0 is visible right away
 
-  // Guarantee save before the page unloads (covers tab close, refresh, navigation)
+  // Guarantee save before the page unloads (covers tab close, refresh, navigation).
+  // Uses saveStore()'s guard so an empty in-memory store (e.g. from a failed load)
+  // can never silently overwrite real data already sitting in storage.
   window.addEventListener('beforeunload', ()=>{
-    try{ localStorage.setItem(STORE_KEY, JSON.stringify(store)); }catch(e){}
+    const keys = Object.keys(store);
+    if(keys.length === 0){
+      let existing = null;
+      try{ existing = localStorage.getItem(STORE_KEY); }catch(e){}
+      if(existing && existing !== '{}' && existing !== 'null') return; // refuse to wipe
+    }
+    try{
+      const json = JSON.stringify(store);
+      localStorage.setItem(STORE_KEY, json);
+      if(keys.length > 0) localStorage.setItem(BACKUP_KEY, json);
+    }catch(e){}
   });
 
   refreshStats();
