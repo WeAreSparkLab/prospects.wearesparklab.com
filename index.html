@@ -839,7 +839,14 @@ initTheme();
 /* ---------- helpers ---------- */
 function el(id){ return document.getElementById(id); }
 function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function mapsLink(name, area){ return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent([name,area,'UK'].filter(Boolean).join(' ')); }
+function mapsLink(name, area, lat, lon){
+  const q = encodeURIComponent([name, area, 'UK'].filter(Boolean).join(' '));
+  // When the exact coordinates are known, bias Google Maps to that spot so the
+  // check lands on the real local business — not a same-named one in another
+  // town (which is what a name-only search returns for sparse listings).
+  if(lat && lon) return `https://www.google.com/maps/search/${q}/@${lat},${lon},17z`;
+  return 'https://www.google.com/maps/search/?api=1&query=' + q;
+}
 
 /* ---------- category tag sets ---------- */
 const CATEGORIES = {
@@ -1109,7 +1116,7 @@ function mapPopupHtml(r, added){
     </div>
     <div style="font-size:12px;opacity:0.75;margin-top:1px;">${esc(typeLine)}</div>
     ${rows.join('')}
-    <div style="font-size:12px;margin-top:6px;"><a href="${mapsLink(r.name, r.addr||r.area)}" target="_blank" rel="noopener">Check on Google Maps ↗</a></div>
+    <div style="font-size:12px;margin-top:6px;"><a href="${mapsLink(r.name, r.addr||r.area, r.lat, r.lon)}" target="_blank" rel="noopener">Check on Google Maps ↗</a></div>
     ${btns}
   </div>`;
 }
@@ -1199,7 +1206,7 @@ function bizCard(r, mode){
   const type = r.cat ? `<span class="chip type">${esc(r.cat)}</span>` : '';
   const websiteUrl = r.website && /^https?:/.test(r.website) ? r.website : (r.website? 'http://'+r.website : '');
   const links=[];
-  links.push(`<a href="${mapsLink(r.name, r.area)}" target="_blank" rel="noopener">Maps ↗</a>`);
+  links.push(`<a href="${mapsLink(r.name, r.addr||r.area, r.lat, r.lon)}" target="_blank" rel="noopener">Maps ↗</a>`);
   if(websiteUrl) links.push(`<a href="${esc(websiteUrl)}" target="_blank" rel="noopener">Site ↗</a>`);
   if(r.lat&&r.lon) links.push(`<a href="https://www.openstreetmap.org/${r.id}" target="_blank" rel="noopener">OSM ↗</a>`);
 
@@ -1441,7 +1448,7 @@ const TABLE_COLS=[
   {key:'message', label:'First message', get:r=>r.message||'',
     cell:r=>`<td class="col-message"><textarea class="table-message-in" placeholder="First message…" oninput="setMessage('${r.id}', this.value)">${esc(r.message||'')}</textarea></td>`},
   {key:'links', label:'Links', sort:false, get:r=>'',
-    cell:r=>`<td class="col-links"><a class="table-link" href="${mapsLink(r.name,r.area)}" target="_blank" rel="noopener">Maps ↗</a><button class="table-remove" onclick="removeOne('${r.id}')">Remove</button></td>`}
+    cell:r=>`<td class="col-links"><a class="table-link" href="${mapsLink(r.name,r.addr||r.area,r.lat,r.lon)}" target="_blank" rel="noopener">Maps ↗</a><button class="table-remove" onclick="removeOne('${r.id}')">Remove</button></td>`}
 ];
 const COLS_KEY='table_cols_v1';
 let colOrder=TABLE_COLS.map(c=>c.key);
@@ -1644,7 +1651,7 @@ function exportCSV(){
   const rows=arr.map(r=>[
     r.name, r.area, r.cat||'', STATUS_LABELS[r.status]||r.status, r.website, r.phone, r.social,
     (r.notes||'').replace(/\n/g,' '), (r.message||'').replace(/\n/g,' '), (r.lastContactedAt? new Date(r.lastContactedAt).toISOString().slice(0,10):''),
-    mapsLink(r.name,r.area), r.id,
+    mapsLink(r.name,r.addr||r.area,r.lat,r.lon), r.id,
     r.addedAt? new Date(r.addedAt).toISOString().slice(0,10):''
   ]);
   const csv=[cols.join(',')].concat(rows.map(row=>row.map(v=>{
