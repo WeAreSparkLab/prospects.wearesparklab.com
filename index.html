@@ -946,6 +946,10 @@ async function overpass(query){
 function websiteOf(t){ return t.website||t['contact:website']||t.url||t['contact:url']||''; }
 function phoneOf(t){ return t.phone||t['contact:phone']||t['contact:mobile']||t.mobile||''; }
 function areaOf(t){ return t['addr:city']||t['addr:town']||t['addr:suburb']||t['addr:village']||t['addr:hamlet']||''; }
+function streetOf(t){ return [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' '); }
+// Full one-line address from whatever OSM address parts exist — the most
+// reliable way to tell near-identically named businesses apart.
+function addressOf(t){ return [streetOf(t), areaOf(t), t['addr:postcode']].filter(Boolean).join(', '); }
 function catLabelOf(t){
   if(t.healthcare) return (t['healthcare:speciality']||t.healthcare).replace(/_/g,' ');
   if(t.shop) return t.shop.replace(/_/g,' ');
@@ -993,7 +997,7 @@ async function runSearch(){
       // search — otherwise a nail bar and an osteopath get the same bonus and
       // sort identically. This is what pushes real wellness to the top.
       const rec={ id, name:e.tags.name, website:websiteOf(e.tags), phone:phoneOf(e.tags),
-        area:areaOf(e.tags), cat:typeLabelOf(e.tags), lat, lon, core:isWellness(e.tags) };
+        area:areaOf(e.tags), addr:addressOf(e.tags), cat:typeLabelOf(e.tags), lat, lon, core:isWellness(e.tags) };
       raw.push(rec);
     }
 
@@ -1083,20 +1087,29 @@ function ensureMap(){
 }
 
 function mapPopupHtml(r, added){
-  const bits=[];
-  if(r.cat) bits.push(esc(r.cat));
-  bits.push(r.website ? 'has website' : 'no website');
-  if(r.phone) bits.push(esc(r.phone));
+  const typeLine = [r.cat, r.website ? 'has website' : 'no website'].filter(Boolean).join(' · ');
+  const rows=[];
+  if(r.addr)  rows.push(`<div style="font-size:12px;margin-top:5px;">📍 ${esc(r.addr)}</div>`);
+  if(r.phone) rows.push(`<div style="font-size:12px;margin-top:3px;">📞 <a href="tel:${esc(r.phone.replace(/\s/g,''))}" style="color:inherit;">${esc(r.phone)}</a></div>`);
+  if(r.website){
+    const url = /^https?:/.test(r.website) ? r.website : 'http://'+r.website;
+    rows.push(`<div style="font-size:12px;margin-top:3px;">🌐 <a href="${esc(url)}" target="_blank" rel="noopener">${esc(r.website.replace(/^https?:\/\//,'').replace(/\/$/,''))}</a></div>`);
+  }
+  const fit = r.score || scoreOf(r, r.core);
   const btns = added
-    ? '<div style="color:#3F8F5E;font-weight:600;margin-top:8px;">✓ Added to your list</div>'
-    : `<div style="margin-top:8px;display:flex;gap:6px;">
+    ? '<div style="color:#3F8F5E;font-weight:600;margin-top:10px;">✓ Added to your list</div>'
+    : `<div style="margin-top:10px;display:flex;gap:6px;">
          <button type="button" onclick="addFromMap('${r.id}')" style="flex:1;padding:6px 8px;border:0;border-radius:6px;background:#3F8F5E;color:#fff;font-weight:600;cursor:pointer;">Add to list</button>
          <button type="button" onclick="dismissFromMap('${r.id}')" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#0f172a;cursor:pointer;">Dismiss</button>
        </div>`;
-  return `<div style="min-width:180px;font-family:inherit;color:#0f172a;">
-    <div style="font-weight:700;font-size:14px;margin-bottom:2px;">${esc(r.name)}</div>
-    <div style="font-size:12px;opacity:0.75;">${bits.join(' · ')}</div>
-    <div style="font-size:12px;margin-top:4px;"><a href="${mapsLink(r.name,r.area)}" target="_blank" rel="noopener">Check on Google Maps ↗</a></div>
+  return `<div style="min-width:200px;max-width:270px;font-family:inherit;color:#0f172a;">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
+      <div style="font-weight:700;font-size:14px;">${esc(r.name)}</div>
+      <div style="font-size:11px;font-weight:700;color:${markerColor(fit)};white-space:nowrap;">fit ${fit}</div>
+    </div>
+    <div style="font-size:12px;opacity:0.75;margin-top:1px;">${esc(typeLine)}</div>
+    ${rows.join('')}
+    <div style="font-size:12px;margin-top:6px;"><a href="${mapsLink(r.name, r.addr||r.area)}" target="_blank" rel="noopener">Check on Google Maps ↗</a></div>
     ${btns}
   </div>`;
 }
@@ -1226,7 +1239,7 @@ function bizCard(r, mode){
     <div class="score"><div class="v">${score}</div><div class="lab">fit</div></div>
     <div class="biz-main">
       <p class="biz-name">${esc(r.name)}</p>
-      <div class="biz-meta">${r.area?esc(r.area)+' · ':''}${type} ${site} ${phone}</div>
+      <div class="biz-meta">${r.addr?esc(r.addr)+' · ':(r.area?esc(r.area)+' · ':'')}${type} ${site} ${phone}</div>
       <div class="biz-links">${links.join('')}</div>
       ${dupeWarn}
       ${notes}
@@ -1237,7 +1250,7 @@ function bizCard(r, mode){
 
 /* ---------- result actions ---------- */
 function recordFrom(r, status){
-  return { id:r.id, name:r.name, website:r.website, phone:r.phone, area:r.area, cat:r.cat,
+  return { id:r.id, name:r.name, website:r.website, phone:r.phone, area:r.area, addr:r.addr, cat:r.cat,
     lat:r.lat, lon:r.lon, core:r.core, status, notes:'', message:'', social:'', addedAt:Date.now(), lastContactedAt:null };
 }
 // Manually add a business the user already knows about (not from search).
