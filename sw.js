@@ -1,4 +1,4 @@
-const CACHE = 'sparklab-prospects-v8';
+const CACHE = 'sparklab-prospects-v9';
 const SHELL = [
   './',
   './index.html',
@@ -23,20 +23,42 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Only handle same-origin app-shell requests. Everything else (Overpass,
-// Nominatim, Google Fonts, etc.) goes straight to the network untouched,
-// so search results are always fresh.
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+  const req = event.request;
+  const url = new URL(req.url);
+  // Cross-origin (Overpass, Nominatim, map tiles, etc.) goes straight to the
+  // network untouched, so search results and tiles are always fresh.
   if (url.origin !== self.location.origin) return;
+  if (req.method !== 'GET') return;
 
+  const isHTML = req.mode === 'navigate' ||
+    (req.headers.get('accept') || '').includes('text/html');
+
+  if (isHTML) {
+    // Network-FIRST for the app page: whenever online, always load the freshly
+    // deployed version so new features show up immediately instead of being
+    // stuck behind a cached copy. Falls back to cache only when offline.
+    event.respondWith(
+      fetch(req)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(req, copy));
+          return response;
+        })
+        .catch(() => caches.match(req).then((c) => c || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // Static assets (Leaflet, icons, manifest): serve cached for speed, then
+  // refresh the cache in the background.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request)
+    caches.match(req).then((cached) => {
+      const fetchPromise = fetch(req)
         .then((response) => {
           if (response && response.status === 200) {
             const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+            caches.open(CACHE).then((cache) => cache.put(req, copy));
           }
           return response;
         })
