@@ -341,7 +341,14 @@
           <input type="text" id="kw" placeholder="e.g. reflexology, sports, holistic" autocomplete="off">
         </div>
       </div>
-      <label class="toggle"><input type="checkbox" id="nosite" checked> Only show businesses with no website listed</label>
+      <div>
+        <label class="f" for="sitefilter">Website</label>
+        <select id="sitefilter">
+          <option value="none">Show only businesses with no website (recommended)</option>
+          <option value="has">Show only businesses that have a website</option>
+          <option value="all">Show all — with or without a website</option>
+        </select>
+      </div>
       <div class="actions">
         <button class="primary" id="go" onclick="runSearch()">Find prospects</button>
         <span id="search-status" class="hidden-note"></span>
@@ -567,10 +574,10 @@ async function loadSettings(){
   }catch(e){ return null; }
 }
 async function saveSettings(){
-  // Deliberately NOT persisting "nosite" — it's the core protective filter
-  // (hides businesses that already have a website), so every fresh page
-  // load should start with it back on rather than silently staying off
-  // from a previous session.
+  // Deliberately NOT persisting the "Website" filter — it's the core protective
+  // default (show only businesses with no website), so every fresh page load
+  // starts back on that rather than silently staying on a previous session's
+  // "has website" or "show all" choice.
   const s = { loc:el('loc').value, cat:el('cat').value, rad:el('rad').value };
   try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
   schedulePush();
@@ -990,19 +997,20 @@ async function runSearch(){
       raw.push(rec);
     }
 
-    // filter: already actioned (no repeats) + no-website toggle
-    const onlyNoSite=el('nosite').checked;
+    // filter: already actioned (no repeats) + website preference
+    const siteMode = el('sitefilter') ? el('sitefilter').value : 'none'; // 'none' | 'has' | 'all'
     let alreadyCount=0, siteFiltered=0;
     let fresh=raw.filter(r=>{
       if(store[r.id]){ alreadyCount++; return false; }
-      if(onlyNoSite && r.website){ siteFiltered++; return false; }
+      if(siteMode==='none' && r.website){ siteFiltered++; return false; }
+      if(siteMode==='has' && !r.website){ siteFiltered++; return false; }
       return true;
     });
     fresh.forEach(r=>r.score=scoreOf(r,r.core));
     fresh.sort((a,b)=>b.score-a.score || a.name.localeCompare(b.name));
 
     const shownWithSite=fresh.filter(r=>r.website).length;
-    renderResults(fresh, {total:raw.length, already:alreadyCount, siteFiltered, onlyNoSite, shownWithSite});
+    renderResults(fresh, {total:raw.length, already:alreadyCount, siteFiltered, siteMode, shownWithSite});
 
     // Map view: plot the fresh results, then honour the chosen Map/List view.
     lastGeo={ lat:geo.lat, lon:geo.lon, name:geo.name }; lastRad=el('rad').value;
@@ -1029,15 +1037,18 @@ function renderResults(list, meta){
   let note='';
   const bits=[];
   if(meta.already) bits.push(`<b>${meta.already}</b> you've already actioned`);
-  if(meta.siteFiltered) bits.push(`<b>${meta.siteFiltered}</b> with a website`);
+  if(meta.siteFiltered){
+    const lbl = meta.siteMode==='has' ? 'without a website' : 'with a website';
+    bits.push(`<b>${meta.siteFiltered}</b> ${lbl}`);
+  }
   if(bits.length) note=`<span class="hidden-note">Skipped ${bits.join(' and ')}.</span>`;
 
   if(!list.length){
-    el('find-msg').innerHTML=`<div class="msg"><b>No fresh prospects here.</b> ${note}</div><div class="empty">${meta.total? 'Everything nearby is either already on your list or has a website.':'Nothing matched in this area — try a wider radius or “All wellness”.'}</div>`;
+    el('find-msg').innerHTML=`<div class="msg"><b>No fresh prospects here.</b> ${note}</div><div class="empty">${meta.total? 'Everything nearby is either already on your list or filtered out by your Website choice.':'Nothing matched in this area — try a wider radius or “All wellness”.'}</div>`;
     el('results').innerHTML=''; return;
   }
-  const siteNote = (!meta.onlyNoSite && meta.shownWithSite)
-    ? `<div class="hidden-note" style="margin-top:4px">Filter is off, so this includes <b>${meta.shownWithSite}</b> that already ${meta.shownWithSite>1?'have':'has a'} website${meta.shownWithSite>1?'s':''} — tick “no website listed” above to hide ${meta.shownWithSite>1?'them':'it'}.</div>`
+  const siteNote = (meta.siteMode==='all' && meta.shownWithSite)
+    ? `<div class="hidden-note" style="margin-top:4px">Showing all, so this includes <b>${meta.shownWithSite}</b> that already ${meta.shownWithSite>1?'have':'has a'} website${meta.shownWithSite>1?'s':''} — set <b>Website</b> back to “no website” to hide ${meta.shownWithSite>1?'them':'it'}.</div>`
     : '';
   el('find-msg').innerHTML=`<div class="msg">Found <b>${list.length}</b> fresh prospect${list.length>1?'s':''}. ${note}</div>${siteNote}
     <div class="actions" style="margin-top:6px"><button class="ghost" onclick="addAll()">Add all to list</button><button class="ghost" onclick="dismissAll()">Dismiss all</button></div>`;
@@ -1654,7 +1665,7 @@ function showTab(t){
   try{ const v=localStorage.getItem(MAPVIEW_KEY); if(v==='map'||v==='list') resultView=v; }catch(e){}
   const s=await loadSettings();
   if(s){ el('loc').value=s.loc||''; if(s.cat)el('cat').value=s.cat; if(s.rad)el('rad').value=s.rad; }
-  el('nosite').checked=true; // always start protective — see saveSettings note
+  if(el('sitefilter')) el('sitefilter').value='none'; // always start protective — see saveSettings note
   renderAccountBar();
   updateSaveIndicator(false); // show current state immediately, so an unexpected 0 is visible right away
 
