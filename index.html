@@ -13,6 +13,7 @@
 <link rel="icon" href="icons/icon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="./lib/leaflet.css">
 <script>
 (function(){
   try{
@@ -394,6 +395,12 @@
     </details>
 
     <div id="find-msg"></div>
+    <div id="result-views" style="display:none;gap:6px;margin:0 2px 10px;">
+      <button class="ghost view-btn" id="view-map-btn" onclick="setResultView('map')">🗺 Map</button>
+      <button class="ghost view-btn" id="view-list-btn" onclick="setResultView('list')">☰ List</button>
+      <span class="hidden-note" id="map-hint" style="align-self:center;margin-left:4px;"></span>
+    </div>
+    <div id="map" style="display:none;height:400px;border-radius:12px;overflow:hidden;margin-bottom:14px;z-index:0;"></div>
     <div class="cards" id="results"></div>
   </section>
 
@@ -460,6 +467,7 @@
   </div>
 </div>
 
+<script src="./lib/leaflet.js"></script>
 <script>
 /* ---------- state ---------- */
 const STORE_KEY = 'prospects_v1';
@@ -995,6 +1003,18 @@ async function runSearch(){
 
     const shownWithSite=fresh.filter(r=>r.website).length;
     renderResults(fresh, {total:raw.length, already:alreadyCount, siteFiltered, onlyNoSite, shownWithSite});
+
+    // Map view: plot the fresh results, then honour the chosen Map/List view.
+    lastGeo={ lat:geo.lat, lon:geo.lon, name:geo.name }; lastRad=el('rad').value;
+    if(fresh.length && hasMap()){
+      el('result-views').style.display='flex';
+      renderMap(fresh, lastGeo, lastRad);
+      setResultView(resultView);
+    } else {
+      el('result-views').style.display='none';
+      el('map').style.display='none';
+      el('results').style.display='';
+    }
   }catch(err){
     el('find-msg').innerHTML='<div class="empty"><div class="big">Search hit a snag</div>The OpenStreetMap servers can be briefly busy. Wait a few seconds and try again.<br><span class="hidden-note">'+esc(err.message||'')+'</span></div>';
   }
@@ -1003,6 +1023,7 @@ async function runSearch(){
 function finish(){ busy=false; el('go').disabled=false; el('search-status').textContent=''; }
 
 let lastResults=[];
+let lastGeo=null, lastRad=null;
 function renderResults(list, meta){
   lastResults=list;
   let note='';
@@ -1021,6 +1042,113 @@ function renderResults(list, meta){
   el('find-msg').innerHTML=`<div class="msg">Found <b>${list.length}</b> fresh prospect${list.length>1?'s':''}. ${note}</div>${siteNote}
     <div class="actions" style="margin-top:6px"><button class="ghost" onclick="addAll()">Add all to list</button><button class="ghost" onclick="dismissAll()">Dismiss all</button></div>`;
   el('results').innerHTML=list.map(r=>bizCard(r,'result')).join('');
+}
+
+/* ---------- results map (Leaflet, vendored locally) ---------- */
+const MAPVIEW_KEY='resultview_v1';
+let map=null, markerLayer=null, extrasLayer=null;
+let resultMarkers={};      // id -> circleMarker
+let mapBounds=null;        // L.latLngBounds of the current results
+let resultView='map';      // 'map' | 'list'
+const hasMap = ()=> typeof L!=='undefined';
+
+// Green = strong fit (usually a no-website wellness practice), amber = medium,
+// grey = weaker — so the best prospects stand out on the map at a glance.
+function markerColor(score){
+  if(score>=70) return '#3F8F5E';
+  if(score>=40) return '#C9922B';
+  return '#8a94a6';
+}
+
+function ensureMap(){
+  if(map || !hasMap()) return map;
+  map = L.map('map', { scrollWheelZoom:true, zoomControl:true });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom:19, attribution:'© OpenStreetMap contributors' }).addTo(map);
+  markerLayer = L.layerGroup().addTo(map);
+  extrasLayer = L.layerGroup().addTo(map);
+  map.setView([54.0,-2.0], 6);   // UK-wide until the first search
+  return map;
+}
+
+function mapPopupHtml(r, added){
+  const bits=[];
+  if(r.cat) bits.push(esc(r.cat));
+  bits.push(r.website ? 'has website' : 'no website');
+  if(r.phone) bits.push(esc(r.phone));
+  const btns = added
+    ? '<div style="color:#3F8F5E;font-weight:600;margin-top:8px;">✓ Added to your list</div>'
+    : `<div style="margin-top:8px;display:flex;gap:6px;">
+         <button type="button" onclick="addFromMap('${r.id}')" style="flex:1;padding:6px 8px;border:0;border-radius:6px;background:#3F8F5E;color:#fff;font-weight:600;cursor:pointer;">Add to list</button>
+         <button type="button" onclick="dismissFromMap('${r.id}')" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#0f172a;cursor:pointer;">Dismiss</button>
+       </div>`;
+  return `<div style="min-width:180px;font-family:inherit;color:#0f172a;">
+    <div style="font-weight:700;font-size:14px;margin-bottom:2px;">${esc(r.name)}</div>
+    <div style="font-size:12px;opacity:0.75;">${bits.join(' · ')}</div>
+    <div style="font-size:12px;margin-top:4px;"><a href="${mapsLink(r.name,r.area)}" target="_blank" rel="noopener">Check on Google Maps ↗</a></div>
+    ${btns}
+  </div>`;
+}
+
+function renderMap(list, geo, rad){
+  if(!hasMap()) return;
+  ensureMap();
+  markerLayer.clearLayers(); extrasLayer.clearLayers(); resultMarkers={};
+  if(geo){
+    L.circle([geo.lat,geo.lon], { radius:Number(rad)||5000, color:'#2563eb', weight:1, fillColor:'#2563eb', fillOpacity:0.05 }).addTo(extrasLayer);
+    L.circleMarker([geo.lat,geo.lon], { radius:6, color:'#1B2A2E', weight:2, fillColor:'#fff', fillOpacity:1 }).addTo(extrasLayer).bindPopup('Search centre');
+  }
+  const pts=[];
+  list.forEach(r=>{
+    if(!(r.lat&&r.lon)) return;
+    const m=L.circleMarker([r.lat,r.lon], { radius:8, color:'#fff', weight:1.5, fillColor:markerColor(r.score||scoreOf(r,r.core)), fillOpacity:0.95 });
+    m.bindPopup(mapPopupHtml(r,false));
+    m.addTo(markerLayer);
+    resultMarkers[r.id]=m;
+    pts.push([r.lat,r.lon]);
+  });
+  if(geo) pts.push([geo.lat,geo.lon]);
+  mapBounds = pts.length ? L.latLngBounds(pts) : null;
+  const hint=el('map-hint'); if(hint) hint.textContent = `${Object.keys(resultMarkers).length} shown`;
+  if(resultView==='map') applyMapView();
+}
+
+// Leaflet needs a visible, correctly-sized container before it can fit bounds.
+function applyMapView(){
+  if(!map) return;
+  setTimeout(()=>{ map.invalidateSize(); if(mapBounds && mapBounds.isValid()) map.fitBounds(mapBounds,{padding:[30,30],maxZoom:16}); }, 0);
+}
+
+function setResultView(v){
+  resultView = (v==='list') ? 'list' : 'map';
+  try{ localStorage.setItem(MAPVIEW_KEY, resultView); }catch(e){}
+  const showMap = resultView==='map' && hasMap();
+  const mapEl=el('map'), listEl=el('results'), mapBtn=el('view-map-btn'), listBtn=el('view-list-btn');
+  if(mapEl)  mapEl.style.display  = showMap ? 'block' : 'none';
+  if(listEl) listEl.style.display = showMap ? 'none' : '';
+  if(mapBtn)  mapBtn.style.background  = showMap  ? 'var(--green-soft)' : '';
+  if(listBtn) listBtn.style.background = !showMap ? 'var(--green-soft)' : '';
+  if(showMap){ ensureMap(); applyMapView(); }
+}
+
+// Add / dismiss straight from a map pin — same record + cloud sync as the cards.
+async function addFromMap(id){
+  const r=lastResults.find(x=>x.id===id); if(!r) return;
+  store[id]=recordFrom(r, r.website?'has_website':'new');
+  await saveStore(); refreshStats();
+  const m=resultMarkers[id];
+  if(m){ m.setStyle({fillColor:'#3F8F5E'}); m.setPopupContent(mapPopupHtml(r,true)); }
+  lastResults=lastResults.filter(x=>x.id!==id);
+  if(el('results')) el('results').innerHTML=lastResults.map(x=>bizCard(x,'result')).join('');
+}
+async function dismissFromMap(id){
+  const r=lastResults.find(x=>x.id===id); if(!r) return;
+  store[id]=recordFrom(r,'dismissed');
+  await saveStore(); refreshStats();
+  const m=resultMarkers[id];
+  if(m && markerLayer){ markerLayer.removeLayer(m); delete resultMarkers[id]; }
+  lastResults=lastResults.filter(x=>x.id!==id);
+  if(el('results')) el('results').innerHTML=lastResults.map(x=>bizCard(x,'result')).join('');
 }
 
 /* ---------- card rendering ---------- */
@@ -1523,6 +1651,7 @@ function showTab(t){
   await loadStore();          // local first — instant and offline-safe
   loadCloudSession();
   loadColOrder();
+  try{ const v=localStorage.getItem(MAPVIEW_KEY); if(v==='map'||v==='list') resultView=v; }catch(e){}
   const s=await loadSettings();
   if(s){ el('loc').value=s.loc||''; if(s.cat)el('cat').value=s.cat; if(s.rad)el('rad').value=s.rad; }
   el('nosite').checked=true; // always start protective — see saveSettings note

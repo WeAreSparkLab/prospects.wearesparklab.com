@@ -1,10 +1,12 @@
-const CACHE = 'sparklab-prospects-v6';
+const CACHE = 'sparklab-prospects-v7';
 const SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './lib/leaflet.js',
+  './lib/leaflet.css'
 ];
 
 self.addEventListener('install', (event) => {
