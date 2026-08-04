@@ -346,6 +346,53 @@
         <span id="search-status" class="hidden-note"></span>
       </div>
     </div>
+
+    <details class="search-card" id="manual-card" style="margin-top:12px;">
+      <summary style="cursor:pointer;font-weight:600;list-style:none;">+ Add a business manually</summary>
+      <p class="hidden-note" style="margin:8px 2px 14px;">For a prospect you already know about — it goes straight into your <b>My list</b> queue.</p>
+      <div class="field-grid">
+        <div>
+          <label class="f" for="m-name">Business name *</label>
+          <input type="text" id="m-name" placeholder="e.g. Serenity Massage" autocomplete="off">
+        </div>
+        <div>
+          <label class="f" for="m-area">Town / area</label>
+          <input type="text" id="m-area" placeholder="e.g. Norwich" autocomplete="off">
+        </div>
+      </div>
+      <div class="row2">
+        <div>
+          <label class="f" for="m-phone">Phone</label>
+          <input type="text" id="m-phone" placeholder="optional" autocomplete="off">
+        </div>
+        <div>
+          <label class="f" for="m-cat">Type</label>
+          <select id="m-cat">
+            <option>Massage &amp; bodywork</option>
+            <option>Beauty &amp; skincare</option>
+            <option>Therapy &amp; counselling</option>
+            <option>Physio, chiro &amp; osteo</option>
+            <option>Acupuncture &amp; holistic</option>
+            <option>Yoga, pilates &amp; fitness</option>
+            <option>Hair &amp; nails</option>
+            <option>Other</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:2px;">
+        <label class="f" for="m-web">Website</label>
+        <input type="text" id="m-web" placeholder="optional — leave blank if they have none" autocomplete="off">
+      </div>
+      <div style="margin-top:10px;">
+        <label class="f" for="m-notes">Notes</label>
+        <input type="text" id="m-notes" placeholder="optional" autocomplete="off">
+      </div>
+      <div class="actions">
+        <button class="primary" onclick="addManual()">Add to my list</button>
+        <span id="manual-msg" class="hidden-note"></span>
+      </div>
+    </details>
+
     <div id="find-msg"></div>
     <div class="cards" id="results"></div>
   </section>
@@ -1053,6 +1100,27 @@ function bizCard(r, mode){
 function recordFrom(r, status){
   return { id:r.id, name:r.name, website:r.website, phone:r.phone, area:r.area, cat:r.cat,
     lat:r.lat, lon:r.lon, core:r.core, status, notes:'', message:'', social:'', addedAt:Date.now(), lastContactedAt:null };
+}
+// Manually add a business the user already knows about (not from search).
+// Builds the same record shape as recordFrom so it renders/syncs identically.
+async function addManual(){
+  const name=el('m-name').value.trim();
+  const msg=el('manual-msg');
+  if(!name){ el('m-name').focus(); if(msg){ msg.style.color='#c0392b'; msg.textContent='Enter a business name.'; } return; }
+  const catLabel=el('m-cat').value;
+  const wellness=!(catLabel==='Hair & nails' || catLabel==='Other'); // ranks real wellness above grooming
+  const id='manual/'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+  store[id]={ id, name, website:el('m-web').value.trim(), phone:el('m-phone').value.trim(),
+    area:el('m-area').value.trim(), cat:catLabel, lat:null, lon:null, core:wellness,
+    status:'new', notes:el('m-notes').value.trim(), message:'', social:'',
+    addedAt:Date.now(), lastContactedAt:null };
+  await saveStore();
+  refreshStats();
+  if(typeof renderList==='function') renderList();
+  if(typeof renderTable==='function') renderTable();
+  ['m-name','m-area','m-phone','m-web','m-notes'].forEach(k=>{ el(k).value=''; });
+  el('m-name').focus();
+  if(msg){ msg.style.color='var(--green)'; msg.textContent='Added “'+name+'” to My list.'; setTimeout(()=>{ msg.textContent=''; msg.style.color=''; }, 4000); }
 }
 async function addOne(id){
   const r=lastResults.find(x=>x.id===id); if(!r) return;
