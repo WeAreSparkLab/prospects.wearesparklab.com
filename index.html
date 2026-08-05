@@ -840,11 +840,13 @@ initTheme();
 function el(id){ return document.getElementById(id); }
 function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mapsLink(name, area, lat, lon){
+  // With exact coordinates, open Google Maps AT the point itself (query=lat,lon)
+  // so it shows what's actually there. A name search — even centred on the area
+  // — makes Google list same-named businesses near YOUR location instead, which
+  // is useless for a generic name like "Nail Art".
+  if(lat && lon) return 'https://www.google.com/maps/search/?api=1&query=' + lat + '%2C' + lon;
+  // No coordinates (e.g. a manually added business): fall back to a name search.
   const q = encodeURIComponent([name, area, 'UK'].filter(Boolean).join(' '));
-  // When the exact coordinates are known, bias Google Maps to that spot so the
-  // check lands on the real local business — not a same-named one in another
-  // town (which is what a name-only search returns for sparse listings).
-  if(lat && lon) return `https://www.google.com/maps/search/${q}/@${lat},${lon},17z`;
   return 'https://www.google.com/maps/search/?api=1&query=' + q;
 }
 
