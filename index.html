@@ -315,13 +315,18 @@
           <label class="f" for="cat">Category</label>
           <select id="cat">
             <option value="all">All wellness (recommended)</option>
-            <option value="massage">Massage &amp; bodywork</option>
-            <option value="beauty">Beauty &amp; skincare</option>
-            <option value="therapy">Therapy &amp; counselling</option>
-            <option value="physio">Physio, chiro &amp; osteo</option>
-            <option value="alternative">Acupuncture &amp; holistic</option>
-            <option value="fitness">Yoga, pilates &amp; fitness</option>
-            <option value="hairnails">Hair &amp; nails</option>
+            <optgroup label="Wellness">
+              <option value="massage">Massage &amp; bodywork</option>
+              <option value="beauty">Beauty &amp; skincare</option>
+              <option value="therapy">Therapy &amp; counselling</option>
+              <option value="physio">Physio, chiro &amp; osteo</option>
+              <option value="alternative">Acupuncture &amp; holistic</option>
+            </optgroup>
+            <optgroup label="Other local business">
+              <option value="hairnails">Hair &amp; nails</option>
+              <option value="fitness">Yoga, pilates &amp; fitness</option>
+              <option value="retail">Independent retail</option>
+            </optgroup>
           </select>
         </div>
       </div>
@@ -470,7 +475,8 @@
 
   <div class="foot" id="foot">
     <b>How the no-repeat works:</b> every business you Add or Dismiss is remembered on this device. New searches automatically skip anything you've already actioned, and anything marked “Has website” or “Not interested” stays hidden for good.<br>
-    Data from <a class="link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Coverage of small solo practitioners varies by town — if a search looks thin, widen the radius or try “All wellness”, and use the <b>Maps ↗</b> link on each result to verify with your usual Google check.
+    <b>Not seeing enough?</b> “All wellness” covers the five hands-on categories only. Everything under <b>Other local business</b> — Hair &amp; nails, Yoga, pilates &amp; fitness, and Independent retail — is a separate pick, and those are usually the biggest untapped groups in a town. On the map, a numbered circle means several businesses are stacked at that spot: zoom in or tap the number to open them.<br>
+    Data from <a class="link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Coverage of small solo practitioners varies by town — if a search looks thin, widen the radius or try “All wellness”, and use the <b>Maps ↗</b> link on each result to verify with your usual Google check. <b>Maps ↗</b> looks the business up by name with the map already zoomed to its street; if Google has no listing under that name, <b>Pin ↗</b> (“exact spot” in map popups) drops you on the exact coordinates so you can see what is really there.
   </div>
 </div>
 
@@ -840,27 +846,61 @@ initTheme();
 function el(id){ return document.getElementById(id); }
 function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mapsLink(name, area, lat, lon){
-  // With exact coordinates, open Google Maps AT the point itself (query=lat,lon)
-  // so it shows what's actually there. A name search — even centred on the area
-  // — makes Google list same-named businesses near YOUR location instead, which
-  // is useless for a generic name like "Nail Art".
-  if(lat && lon) return 'https://www.google.com/maps/search/?api=1&query=' + lat + '%2C' + lon;
-  // No coordinates (e.g. a manually added business): fall back to a name search.
-  const q = encodeURIComponent([name, area, 'UK'].filter(Boolean).join(' '));
-  return 'https://www.google.com/maps/search/?api=1&query=' + q;
+  // Search the business BY NAME but pin the map viewport to its exact coordinates
+  // (the /@lat,lon,zoom suffix). Google ranks local results inside the viewport
+  // first, so a generic name like "Nail Art" resolves to THIS shop instead of one
+  // near wherever you happen to be — and if Google has no listing for it, you at
+  // least land on the right street with the neighbouring businesses labelled.
+  // Coordinates alone (the old behaviour) drop a bare "50°30'58.0"N" pin that
+  // names nothing, which is why some businesses never showed.
+  const q = encodeURIComponent([name, area].filter(Boolean).join(', '));
+  if(lat && lon) return 'https://www.google.com/maps/search/' + q + '/@' + lat + ',' + lon + ',19z';
+  // No coordinates (e.g. a manually added business): plain name search.
+  return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent([name, area, 'UK'].filter(Boolean).join(' '));
+}
+// The bare coordinate pin — the "what is actually standing here?" view, for when
+// Google has no listing under that name and the search above comes back empty.
+function mapsPinLink(lat, lon){
+  return 'https://www.google.com/maps/search/?api=1&query=' + lat + '%2C' + lon;
 }
 
 /* ---------- category tag sets ---------- */
+// A lot of small practices sit under a generic healthcare=clinic (or =yes) with
+// no speciality tag at all — "Therapy Truro", "Cathedral Chiropractic". Matching
+// those on the NAME rescues them without dragging in every GP surgery, dentist
+// and NHS site, which is what a bare ["healthcare"="clinic"] would do.
+// Overpass resolves an exact ["key"="value"] straight from its tag index, but a
+// regex value match ["key"~"a|b"] forces a scan of every object carrying that key
+// in the radius. So these stay as exact matches even though it means more
+// statements — folding them into one regex each measurably timed the query out.
+// Regex is used only where it genuinely earns it: free-text keys (name, beauty,
+// healthcare:speciality) whose values are never a fixed vocabulary.
+//
+// Small practices are often mapped as a bare healthcare=clinic with no
+// speciality — "Therapy Truro", "Cathedral Chiropractic". Anchoring on the
+// indexed exact value first and applying the name regex to that small result set
+// rescues them without dragging in every GP surgery, dentist and NHS site.
+const CLINIC_NAME = '["name"~"massage|bodywork|sauna|therap|counsell|psycholog|wellbeing|physio|chiro|osteo|podiat|chiropod|acupunctur|reflexolog|homeopath|naturopath|holistic|reiki|hypno",i]';
+const CLINIC = ['["healthcare"="clinic"]'+CLINIC_NAME, '["healthcare"="yes"]'+CLINIC_NAME];
+// Owner-run high-street shops — the closest profile to the wellness prospects:
+// one location, one owner, often no website. shop=charity is deliberately absent
+// (Oxfam, Age UK and the like are national chains with central web teams), as are
+// supermarkets, chemists, banks and phone shops for the same reason.
+const RETAIL_SHOPS = ['gift','florist','clothes','shoes','bag','jewelry','watches','antiques','books','art','craft','pottery','frame','photo','music','musical_instrument','toys','games','furniture','interior_decoration','houseware','kitchen','curtain','carpet','fabric','wool','stationery','second_hand','bicycle','sports','outdoor','garden_centre'];
 const CATEGORIES = {
-  massage:{core:true, filters:['["shop"="massage"]','["leisure"="spa"]','["amenity"="spa"]','["healthcare"="alternative"]["healthcare:speciality"~"massage",i]','["shop"="beauty"]["beauty"~"massage|spa",i]']},
+  massage:{core:true, filters:['["shop"="massage"]','["leisure"="spa"]','["amenity"="spa"]','["leisure"="sauna"]','["amenity"="sauna"]','["healthcare:speciality"~"massage",i]','["shop"="beauty"]["beauty"~"massage|spa",i]'].concat(CLINIC)},
   beauty:{core:true, filters:['["shop"="beauty"]','["shop"="cosmetics"]','["leisure"="spa"]','["beauty"]']},
-  therapy:{core:true, filters:['["healthcare"="psychotherapist"]','["healthcare"="counselling"]','["healthcare:speciality"~"psychotherapy|counselling|psychology",i]','["office"="therapist"]','["office"="counsellor"]']},
-  physio:{core:true, filters:['["healthcare"="physiotherapist"]','["healthcare"="chiropractor"]','["healthcare"="osteopath"]','["healthcare:speciality"~"physiotherapy|chiropractic|osteopath|podiatry",i]']},
-  alternative:{core:true, filters:['["healthcare"="alternative"]','["healthcare:speciality"~"acupuncture|reflexolog|homeopath|naturopath|herbal|ayurved|reiki|hypno",i]','["shop"="herbalist"]']},
-  fitness:{core:false, filters:['["leisure"="fitness_centre"]','["sport"~"yoga|pilates",i]','["leisure"="sports_centre"]']},
-  hairnails:{core:false, filters:['["shop"="hairdresser"]','["shop"="nails"]','["leisure"="nail_salon"]','["shop"="beauty"]["beauty"~"nails",i]']}
+  therapy:{core:true, filters:['["healthcare"="psychotherapist"]','["healthcare"="counselling"]','["healthcare"="psychologist"]','["healthcare:speciality"~"psychotherapy|counselling|psychology",i]','["office"="therapist"]','["office"="counsellor"]','["office"="psychotherapist"]'].concat(CLINIC)},
+  physio:{core:true, filters:['["healthcare"="physiotherapist"]','["healthcare"="chiropractor"]','["healthcare"="osteopath"]','["healthcare"="podiatrist"]','["healthcare"="occupational_therapist"]','["healthcare"="speech_therapist"]','["healthcare:speciality"~"physiotherapy|chiropractic|osteopath|podiatry|chiropody",i]'].concat(CLINIC)},
+  alternative:{core:true, filters:['["healthcare"="alternative"]','["healthcare"="acupuncturist"]','["healthcare:speciality"~"acupuncture|reflexolog|homeopath|naturopath|herbal|ayurved|reiki|hypno",i]','["shop"="herbalist"]'].concat(CLINIC)},
+  fitness:{core:false, filters:['["leisure"="fitness_centre"]','["leisure"="sports_centre"]','["sport"~"yoga|pilates",i]']},
+  hairnails:{core:false, filters:['["shop"="hairdresser"]','["shop"="nails"]','["leisure"="nail_salon"]','["shop"="beauty"]["beauty"~"nails",i]']},
+  // Built from RETAIL_SHOPS so the query and the classifier below can never drift apart.
+  retail:{core:false, filters:RETAIL_SHOPS.map(v=>`["shop"="${v}"]`)}
 };
+const RETAIL_SET = new Set(RETAIL_SHOPS);
 const TYPE_LABELS = {
+  retail:'Independent retail',
   massage:'Massage & bodywork', beauty:'Beauty & skincare', therapy:'Therapy & counselling',
   physio:'Physio, chiro & osteo', alternative:'Acupuncture & holistic',
   fitness:'Yoga, pilates & fitness', hairnails:'Hair & nails'
@@ -892,11 +932,23 @@ function bucketOf(t){
   if(shop==='hairdresser'||shop==='nails'||leisure==='nail_salon'||
      /nail|manicure|pedicure|eyebrow|\bbrow|lash|eyelash|tanning|\btan\b|waxing|hair_removal|threading/.test(beauty)) return 'hairnails';
   if(leisure==='fitness_centre'||leisure==='sports_centre'||/yoga|pilates/.test(sport)) return 'fitness';
-  if(hc==='alternative'||/acupunctur|reflexolog|homeopath|naturopath|herbal|ayurved|reiki|hypno/.test(hcs)||shop==='herbalist') return 'alternative';
-  if(hc==='physiotherapist'||hc==='chiropractor'||hc==='osteopath'||/physiotherapy|chiropractic|osteopath|podiatry/.test(hcs)) return 'physio';
-  if(hc==='psychotherapist'||hc==='counselling'||office==='therapist'||office==='counsellor'||/psychotherapy|counselling|psychology/.test(hcs)) return 'therapy';
-  if(shop==='massage'||leisure==='spa'||amenity==='spa'||/massage/.test(hcs)||beauty.includes('massage')||beauty.includes('spa')) return 'massage';
+  // Checked before the wellness buckets, but these shop values don't overlap with
+  // any of them, so the order is for readability rather than correctness.
+  if(RETAIL_SET.has(shop)) return 'retail';
+  if(hc==='alternative'||hc==='acupuncturist'||/acupunctur|reflexolog|homeopath|naturopath|herbal|ayurved|reiki|hypno/.test(hcs)||shop==='herbalist') return 'alternative';
+  if(hc==='physiotherapist'||hc==='chiropractor'||hc==='osteopath'||hc==='podiatrist'||hc==='occupational_therapist'||hc==='speech_therapist'||/physiotherapy|chiropractic|osteopath|podiatry|chiropody/.test(hcs)) return 'physio';
+  if(hc==='psychotherapist'||hc==='counselling'||hc==='psychologist'||office==='therapist'||office==='counsellor'||office==='psychotherapist'||/psychotherapy|counselling|psychology/.test(hcs)) return 'therapy';
+  if(shop==='massage'||leisure==='spa'||amenity==='spa'||leisure==='sauna'||amenity==='sauna'||/massage/.test(hcs)||beauty.includes('massage')||beauty.includes('spa')) return 'massage';
   if(shop==='beauty'||shop==='cosmetics'||beauty) return 'beauty';
+  // Generic healthcare=clinic/centre matched purely on its name (see CLINIC
+  // above) — bucket it from the name so it still shows a sensible type label.
+  if(hc){
+    const n=(t.name||'').toLowerCase();
+    if(/acupunctur|reflexolog|homeopath|naturopath|holistic|reiki|hypno/.test(n)) return 'alternative';
+    if(/physio|chiro|osteo|podiat|chiropod|sports injur/.test(n)) return 'physio';
+    if(/therap|counsell|psycholog|mental health|wellbeing/.test(n)) return 'therapy';
+    if(/massage|bodywork|sauna/.test(n)) return 'massage';
+  }
   return null;
 }
 function typeLabelOf(t){
@@ -926,17 +978,54 @@ async function geocode(q){
 
 /* ---------- overpass ---------- */
 const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+// Overpass stops emitting once it has produced this many elements. The old value
+// of 500 was reached by a 20 km search in any city, and the app then presented the
+// truncated list as if it were the whole picture. Hitting it is now reported —
+// see the "capped" note in renderResults.
+const RESULT_CAP=2000;
+// "All wellness" concatenates five categories that share several filters (spa,
+// and the clinic rescue appears in four of them), so the same statement was being
+// sent to Overpass up to four times. Deduping is a free saving; merging further
+// is not, for the indexing reason described above CATEGORIES.
+function mergeFilters(filters){
+  return Array.from(new Set(filters));
+}
+// Degrees of lat/lon covering `rad` metres — used to turn the search circle into
+// a bounding box.
+function bboxAround(lat, lon, rad){
+  // 111320 m/degree is a mean, so at UK latitudes the raw box lands ~0.1% inside
+  // the circle. The box MUST fully contain the circle or businesses right on the
+  // edge are lost before the exact trim ever sees them — hence the 3% pad. Over-
+  // selecting costs nothing; distanceMetres() trims the excess afterwards.
+  const pad = 1.03;
+  const dLat = pad*rad/111320;
+  const dLon = pad*rad/(111320*Math.max(0.01, Math.cos(lat*Math.PI/180)));
+  return { s:lat-dLat, w:lon-dLon, n:lat+dLat, e:lon+dLon };
+}
 function buildQuery(filters, kw, lat, lon, rad){
+  // A per-statement (around:...) makes Overpass re-evaluate the radius for every
+  // one of the ~30 statements, which timed the query out well before it returned.
+  // A single [bbox:...] in the header is served straight from the primary spatial
+  // index and is applied once for the whole union. The box is bigger than the
+  // circle, so results outside the real radius are trimmed off in runSearch.
+  const b = bboxAround(lat, lon, Number(rad)||5000);
   let parts=[];
-  const around=`(around:${rad},${lat},${lon})`;
-  filters.forEach(f=>parts.push(`nwr${f}${around};`));
+  mergeFilters(filters).forEach(f=>parts.push(`nwr${f};`));
   if(kw && kw.trim()){
     const k=kw.trim().replace(/[\\"]/g,'');
     ['shop','healthcare','office','amenity','leisure'].forEach(base=>{
-      parts.push(`nwr["${base}"]["name"~"${k}",i]${around};`);
+      parts.push(`nwr["${base}"]["name"~"${k}",i];`);
     });
   }
-  return `[out:json][timeout:25];(${parts.join('')});out center tags 500;`;
+  return `[out:json][timeout:90][bbox:${b.s.toFixed(6)},${b.w.toFixed(6)},${b.n.toFixed(6)},${b.e.toFixed(6)}];(${parts.join('')});out center tags ${RESULT_CAP};`;
+}
+// Great-circle metres — the bbox above over-selects at the corners, so results
+// are trimmed back to the radius the user actually chose.
+function distanceMetres(lat1, lon1, lat2, lon2){
+  const R=6371000, toRad=Math.PI/180;
+  const dLat=(lat2-lat1)*toRad, dLon=(lon2-lon1)*toRad;
+  const a=Math.sin(dLat/2)**2 + Math.cos(lat1*toRad)*Math.cos(lat2*toRad)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.min(1, Math.sqrt(a)));
 }
 async function overpass(query){
   let lastErr;
@@ -996,12 +1085,16 @@ async function runSearch(){
     const elements=await overpass(query);
 
     // normalise + dedupe within results
+    const radM=Number(el('rad').value)||5000;
     const seenIds=new Set(); let raw=[];
     for(const e of elements){
       if(!e.tags||!e.tags.name) continue;
       const id=e.type+'/'+e.id;
       if(seenIds.has(id)) continue; seenIds.add(id);
       const lat=e.lat||(e.center&&e.center.lat); const lon=e.lon||(e.center&&e.center.lon);
+      // The query used a bounding box for speed, so drop the corners that fall
+      // outside the circle the user actually asked for.
+      if(lat && lon && distanceMetres(geo.lat, geo.lon, lat, lon) > radM) continue;
       // Score "core" per business from its own category, not once for the whole
       // search — otherwise a nail bar and an osteopath get the same bonus and
       // sort identically. This is what pushes real wellness to the top.
@@ -1023,7 +1116,8 @@ async function runSearch(){
     fresh.sort((a,b)=>b.score-a.score || a.name.localeCompare(b.name));
 
     const shownWithSite=fresh.filter(r=>r.website).length;
-    renderResults(fresh, {total:raw.length, already:alreadyCount, siteFiltered, siteMode, shownWithSite});
+    renderResults(fresh, {total:raw.length, already:alreadyCount, siteFiltered, siteMode, shownWithSite,
+                          capped: elements.length >= RESULT_CAP});
 
     // Map view: plot the fresh results, then honour the chosen Map/List view.
     lastGeo={ lat:geo.lat, lon:geo.lon, name:geo.name }; lastRad=el('rad').value;
@@ -1045,6 +1139,15 @@ function finish(){ busy=false; el('go').disabled=false; el('search-status').text
 
 let lastResults=[];
 let lastGeo=null, lastRad=null;
+// Say so when OpenStreetMap stopped sending rather than running out of matches —
+// otherwise a truncated search looks identical to a complete one, and you'd never
+// know a chunk of the area was missing.
+function capNote(meta){
+  if(!meta.capped) return '';
+  return `<div class="msg" style="margin-top:4px"><b>This area has more than we can list at once.</b>
+    OpenStreetMap stopped at ${RESULT_CAP} results, so this is a partial picture —
+    narrow the <b>Search radius</b>, or run one <b>Category</b> at a time, to see the rest.</div>`;
+}
 function renderResults(list, meta){
   lastResults=list;
   let note='';
@@ -1057,13 +1160,13 @@ function renderResults(list, meta){
   if(bits.length) note=`<span class="hidden-note">Skipped ${bits.join(' and ')}.</span>`;
 
   if(!list.length){
-    el('find-msg').innerHTML=`<div class="msg"><b>No fresh prospects here.</b> ${note}</div><div class="empty">${meta.total? 'Everything nearby is either already on your list or filtered out by your Website choice.':'Nothing matched in this area — try a wider radius or “All wellness”.'}</div>`;
+    el('find-msg').innerHTML=`<div class="msg"><b>No fresh prospects here.</b> ${note}</div>${capNote(meta)}<div class="empty">${meta.total? 'Everything nearby is either already on your list or filtered out by your Website choice.':'Nothing matched in this area — try a wider radius or “All wellness”.'}</div>`;
     el('results').innerHTML=''; return;
   }
   const siteNote = (meta.siteMode==='all' && meta.shownWithSite)
     ? `<div class="hidden-note" style="margin-top:4px">Showing all, so this includes <b>${meta.shownWithSite}</b> that already ${meta.shownWithSite>1?'have':'has a'} website${meta.shownWithSite>1?'s':''} — set <b>Website</b> back to “no website” to hide ${meta.shownWithSite>1?'them':'it'}.</div>`
     : '';
-  el('find-msg').innerHTML=`<div class="msg">Found <b>${list.length}</b> fresh prospect${list.length>1?'s':''}. ${note}</div>${siteNote}
+  el('find-msg').innerHTML=`<div class="msg">Found <b>${list.length}</b> fresh prospect${list.length>1?'s':''}. ${note}</div>${siteNote}${capNote(meta)}
     <div class="actions" style="margin-top:6px"><button class="ghost" onclick="addAll()">Add all to list</button><button class="ghost" onclick="dismissAll()">Dismiss all</button></div>`;
   el('results').innerHTML=list.map(r=>bizCard(r,'result')).join('');
 }
@@ -1071,8 +1174,9 @@ function renderResults(list, meta){
 /* ---------- results map (Leaflet, vendored locally) ---------- */
 const MAPVIEW_KEY='resultview_v1';
 let map=null, markerLayer=null, extrasLayer=null;
-let resultMarkers={};      // id -> circleMarker
+let resultMarkers={};      // id -> circleMarker (only for pins drawn individually)
 let mapBounds=null;        // L.latLngBounds of the current results
+let mapPlot=[];            // the records currently plotted, redrawn on every zoom
 let resultView='map';      // 'map' | 'list'
 const hasMap = ()=> typeof L!=='undefined';
 
@@ -1091,6 +1195,8 @@ function ensureMap(){
     { maxZoom:19, attribution:'© OpenStreetMap contributors' }).addTo(map);
   markerLayer = L.layerGroup().addTo(map);
   extrasLayer = L.layerGroup().addTo(map);
+  // Clusters are pixel-based, so they have to be rebuilt whenever the scale changes.
+  map.on('zoomend', ()=>{ if(mapPlot.length) drawMarkers(); });
   map.setView([54.0,-2.0], 6);   // UK-wide until the first search
   return map;
 }
@@ -1118,7 +1224,7 @@ function mapPopupHtml(r, added){
     </div>
     <div style="font-size:12px;opacity:0.75;margin-top:1px;">${esc(typeLine)}</div>
     ${rows.join('')}
-    <div style="font-size:12px;margin-top:6px;"><a href="${mapsLink(r.name, r.addr||r.area, r.lat, r.lon)}" target="_blank" rel="noopener">Check on Google Maps ↗</a></div>
+    <div style="font-size:12px;margin-top:6px;"><a href="${mapsLink(r.name, r.addr||r.area, r.lat, r.lon)}" target="_blank" rel="noopener">Check on Google Maps ↗</a>${(r.lat&&r.lon)?` <span style="opacity:0.5;">·</span> <a href="${mapsPinLink(r.lat, r.lon)}" target="_blank" rel="noopener" title="Drop a pin at the exact spot — use this if the name search finds nothing">exact spot ↗</a>`:''}</div>
     ${btns}
   </div>`;
 }
@@ -1126,24 +1232,91 @@ function mapPopupHtml(r, added){
 function renderMap(list, geo, rad){
   if(!hasMap()) return;
   ensureMap();
-  markerLayer.clearLayers(); extrasLayer.clearLayers(); resultMarkers={};
+  extrasLayer.clearLayers();
   if(geo){
     L.circle([geo.lat,geo.lon], { radius:Number(rad)||5000, color:'#2563eb', weight:1, fillColor:'#2563eb', fillOpacity:0.05 }).addTo(extrasLayer);
     L.circleMarker([geo.lat,geo.lon], { radius:6, color:'#1B2A2E', weight:2, fillColor:'#fff', fillOpacity:1 }).addTo(extrasLayer).bindPopup('Search centre');
   }
-  const pts=[];
-  list.forEach(r=>{
-    if(!(r.lat&&r.lon)) return;
-    const m=L.circleMarker([r.lat,r.lon], { radius:8, color:'#fff', weight:1.5, fillColor:markerColor(r.score||scoreOf(r,r.core)), fillOpacity:0.95 });
-    m.bindPopup(mapPopupHtml(r,false));
-    m.addTo(markerLayer);
-    resultMarkers[r.id]=m;
-    pts.push([r.lat,r.lon]);
-  });
+  mapPlot = list.filter(r=>r.lat&&r.lon);
+  const pts = mapPlot.map(r=>[r.lat,r.lon]);
   if(geo) pts.push([geo.lat,geo.lon]);
   mapBounds = pts.length ? L.latLngBounds(pts) : null;
-  const hint=el('map-hint'); if(hint) hint.textContent = `${Object.keys(resultMarkers).length} shown`;
+  drawMarkers();
   if(resultView==='map') applyMapView();
+}
+
+// Group records that would land within CLUSTER_PX of each other at the current
+// zoom. Without this, a whole town's worth of businesses render as one dot —
+// 40 pins stacked inside an 8 px circle look exactly like a single result, which
+// makes a complete search look like it missed almost everything.
+const CLUSTER_PX = 34;
+function clusterGroups(records){
+  const z = map.getZoom();
+  const pts = records.map(r=>({ r, p: map.project([r.lat,r.lon], z) }));
+  const groups=[], used=new Array(pts.length).fill(false);
+  for(let i=0;i<pts.length;i++){
+    if(used[i]) continue;
+    used[i]=true;
+    const g=[pts[i].r];
+    for(let j=i+1;j<pts.length;j++){
+      if(!used[j] && pts[i].p.distanceTo(pts[j].p) <= CLUSTER_PX){ used[j]=true; g.push(pts[j].r); }
+    }
+    groups.push(g);
+  }
+  return groups;
+}
+// A cluster is coloured by its BEST member, so a stack containing one hot
+// prospect still reads green rather than being greyed out by its neighbours.
+function clusterPopupHtml(group){
+  const rows = group.map(r=>{
+    const fit = r.score||scoreOf(r,r.core);
+    return `<div style="padding:5px 0;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
+      <div><div style="font-weight:600;font-size:12px;">${esc(r.name)}</div>
+      <div style="font-size:11px;opacity:0.7;">${esc(r.cat||'')}${r.website?'':' · no website'}</div></div>
+      <div style="display:flex;gap:4px;flex:0 0 auto;">
+        <button type="button" onclick="addFromMap('${r.id}')" style="padding:3px 6px;border:0;border-radius:5px;background:#3F8F5E;color:#fff;font-size:11px;font-weight:600;cursor:pointer;">Add</button>
+        <button type="button" onclick="dismissFromMap('${r.id}')" style="padding:3px 6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#0f172a;font-size:11px;cursor:pointer;">×</button>
+      </div></div>`;
+  }).join('');
+  return `<div style="min-width:230px;max-width:280px;font-family:inherit;color:#0f172a;">
+    <div style="font-weight:700;font-size:13px;">${group.length} businesses at this spot</div>
+    <div style="max-height:240px;overflow-y:auto;margin-top:2px;">${rows}</div></div>`;
+}
+function drawMarkers(){
+  if(!map || !markerLayer) return;
+  markerLayer.clearLayers(); resultMarkers={};
+  let clustered=0;
+  clusterGroups(mapPlot).forEach(g=>{
+    if(g.length===1){
+      const r=g[0];
+      const m=L.circleMarker([r.lat,r.lon], { radius:8, color:'#fff', weight:1.5, fillColor:markerColor(r.score||scoreOf(r,r.core)), fillOpacity:0.95 });
+      m.bindPopup(mapPopupHtml(r, !!store[r.id]));
+      m.addTo(markerLayer);
+      resultMarkers[r.id]=m;
+      return;
+    }
+    clustered += g.length;
+    const best = Math.max.apply(null, g.map(r=>r.score||scoreOf(r,r.core)));
+    const lat = g.reduce((s,r)=>s+r.lat,0)/g.length, lon = g.reduce((s,r)=>s+r.lon,0)/g.length;
+    const size = g.length<10 ? 30 : (g.length<100 ? 36 : 42);
+    const m = L.marker([lat,lon], { icon: L.divIcon({
+      className:'',
+      html:`<div style="width:${size}px;height:${size}px;border-radius:50%;background:${markerColor(best)};border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45);color:#fff;text-align:center;font:700 ${g.length<100?13:11}px/${size-4}px system-ui,-apple-system,sans-serif;">${g.length}</div>`,
+      iconSize:[size,size], iconAnchor:[size/2,size/2]
+    })});
+    // Click zooms into the stack. When they're literally on the same building
+    // zooming can't separate them, so list them in the popup instead.
+    const b = L.latLngBounds(g.map(r=>[r.lat,r.lon]));
+    const splittable = !b.getSouthWest().equals(b.getNorthEast(), 1e-7);
+    if(splittable && map.getZoom() < 18){
+      m.on('click', ()=> map.fitBounds(b.pad(0.35), { maxZoom:18 }));
+    } else {
+      m.bindPopup(clusterPopupHtml(g));
+    }
+    m.addTo(markerLayer);
+  });
+  const hint=el('map-hint');
+  if(hint) hint.textContent = mapPlot.length + ' shown' + (clustered ? ` · ${clustered} stacked, zoom in or tap a number` : '');
 }
 
 // Leaflet needs a visible, correctly-sized container before it can fit bounds.
@@ -1170,7 +1343,10 @@ async function addFromMap(id){
   store[id]=recordFrom(r, r.website?'has_website':'new');
   await saveStore(); refreshStats();
   const m=resultMarkers[id];
+  // Drawn as its own pin: recolour in place so the popup stays open. Inside a
+  // cluster: redraw, which refreshes that cluster's list.
   if(m){ m.setStyle({fillColor:'#3F8F5E'}); m.setPopupContent(mapPopupHtml(r,true)); }
+  else if(mapPlot.length) drawMarkers();
   lastResults=lastResults.filter(x=>x.id!==id);
   if(el('results')) el('results').innerHTML=lastResults.map(x=>bizCard(x,'result')).join('');
 }
@@ -1178,8 +1354,8 @@ async function dismissFromMap(id){
   const r=lastResults.find(x=>x.id===id); if(!r) return;
   store[id]=recordFrom(r,'dismissed');
   await saveStore(); refreshStats();
-  const m=resultMarkers[id];
-  if(m && markerLayer){ markerLayer.removeLayer(m); delete resultMarkers[id]; }
+  mapPlot = mapPlot.filter(x=>x.id!==id);
+  if(markerLayer) drawMarkers();
   lastResults=lastResults.filter(x=>x.id!==id);
   if(el('results')) el('results').innerHTML=lastResults.map(x=>bizCard(x,'result')).join('');
 }
@@ -1209,6 +1385,7 @@ function bizCard(r, mode){
   const websiteUrl = r.website && /^https?:/.test(r.website) ? r.website : (r.website? 'http://'+r.website : '');
   const links=[];
   links.push(`<a href="${mapsLink(r.name, r.addr||r.area, r.lat, r.lon)}" target="_blank" rel="noopener">Maps ↗</a>`);
+  if(r.lat&&r.lon) links.push(`<a href="${mapsPinLink(r.lat, r.lon)}" target="_blank" rel="noopener" title="Drop a pin at the exact spot — use this if the name search finds nothing">Pin ↗</a>`);
   if(websiteUrl) links.push(`<a href="${esc(websiteUrl)}" target="_blank" rel="noopener">Site ↗</a>`);
   if(r.lat&&r.lon) links.push(`<a href="https://www.openstreetmap.org/${r.id}" target="_blank" rel="noopener">OSM ↗</a>`);
 
