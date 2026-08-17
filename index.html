@@ -474,8 +474,9 @@
   </section>
 
   <div class="foot" id="foot">
-    <b>How the no-repeat works:</b> every business you Add or Dismiss is remembered on this device. New searches automatically skip anything you've already actioned, and anything marked “Has website” or “Not interested” stays hidden for good.<br>
+    <b>How the no-repeat works:</b> every business you Add or Dismiss is saved on this device straight away and backed up to your account. New searches skip anything you've already actioned — including a business OpenStreetMap has re-listed under a new id, matched on name plus area, address or phone — and anything marked “Dismissed”, “Has website” or “Not interested” stays hidden for good. The line under the tabs tells you the truth about saving: <b>☁ synced</b> means it's safely in your account, <b>☁ saving…</b> or <b>offline</b> means it's on this device and still queued, and it keeps retrying until it's up.<br>
     <b>Not seeing enough?</b> “All wellness” covers the five hands-on categories only. Everything under <b>Other local business</b> — Hair &amp; nails, Yoga, pilates &amp; fitness, and Independent retail — is a separate pick, and those are usually the biggest untapped groups in a town. On the map, a numbered circle means several businesses are stacked at that spot: zoom in or tap the number to open them.<br>
+    <b>Reading the map:</b> pin colour shows fit — green strong, amber medium, grey weaker. Tapping a pin turns it <b>purple</b> so you can see what you've already looked at (the popup has an <b>undo</b> if you tapped by mistake), and a stack turns purple once you've opened everything in it. Add or Dismiss removes the pin altogether, so whatever is still coloured is still to do. Visited pins are remembered on this device only.<br>
     Data from <a class="link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Coverage of small solo practitioners varies by town — if a search looks thin, widen the radius or try “All wellness”, and use the <b>Maps ↗</b> link on each result to verify with your usual Google check. <b>Maps ↗</b> looks the business up by name with the map already zoomed to its street; if Google has no listing under that name, <b>Pin ↗</b> (“exact spot” in map popups) drops you on the exact coordinates so you can see what is really there.
   </div>
 </div>
@@ -506,7 +507,34 @@ const STATUS_LABELS = {
 
 /* ---------- storage (localStorage) ---------- */
 const BACKUP_KEY = 'prospects_v1_backup';
+const DIRTY_KEY  = 'prospects_dirty_v1';  // set while local changes are not yet confirmed in the cloud
 let storeLoadedOk = false; // true only if we genuinely read+parsed existing data (or confirmed there truly was none)
+let localSaveFailed = false; // the last localStorage write threw (quota / private mode)
+let cloudDirty = false;      // there are local changes the cloud has not confirmed
+let storeRev = 0;            // bumped on every local write, so an in-flight push knows if it went stale
+
+/* ---------- change stamps ----------
+   Every record carries an `updatedAt`, so a merge can tell which copy of a
+   business is the newer one. Without it the cloud copy always won, which is
+   exactly how a dismissal made here came back to life on the next sync. */
+let lastStamp = 0;
+function nowStamp(){
+  const t = Date.now();
+  lastStamp = (t <= lastStamp) ? lastStamp + 1 : t;  // keep two edits in the same millisecond in order
+  return lastStamp;
+}
+function touch(id){ const r = store[id]; if(r) r.updatedAt = nowStamp(); return r; }
+function stampOf(r){ return (r && (r.updatedAt || r.addedAt)) || 0; }
+
+/* ---------- tombstones ----------
+   Removing a business leaves a marker behind instead of deleting the key, so
+   the removal travels to the other copies rather than being quietly undone by
+   the next merge. A tombstone counts as "not on the list" everywhere. */
+const TOMBSTONE_TTL = 1000*60*60*24*180;   // stop carrying deletions after ~6 months
+function isLive(r){ return !!r && !r.deleted; }
+function rec(id){ const r = store[id]; return isLive(r) ? r : null; }
+function liveRecords(){ return Object.values(store).filter(isLive); }
+function liveCount(){ let n = 0; for(const k in store){ if(isLive(store[k])) n++; } return n; }
 
 async function loadStore(){
   try{
@@ -528,10 +556,30 @@ async function loadStore(){
   }
   // migrate old 'contacted' status (pre Demo built / Message sent split) to 'message_sent'
   Object.values(store).forEach(r=>{ if(r.status==='contacted') r.status='message_sent'; });
+  normaliseStore();
+  try{ cloudDirty = localStorage.getItem(DIRTY_KEY) === '1'; }catch(e){}
+}
+
+// Backfill stamps on older records and drop expired tombstones.
+function normaliseStore(){
+  const cutoff = Date.now() - TOMBSTONE_TTL;
+  Object.keys(store).forEach(id=>{
+    const r = store[id];
+    if(!r || typeof r !== 'object'){ delete store[id]; return; }
+    // Backfill from addedAt, never from "now" — a freshly opened old copy must not
+    // out-rank a genuinely newer edit waiting in the cloud.
+    if(!r.updatedAt) r.updatedAt = r.addedAt || 0;
+    if(r.deleted && r.updatedAt < cutoff) delete store[id];
+  });
+}
+
+function markDirty(v){
+  cloudDirty = v;
+  try{ v ? localStorage.setItem(DIRTY_KEY,'1') : localStorage.removeItem(DIRTY_KEY); }catch(e){}
 }
 
 function updateSaveIndicator(blocked){
-  const n = Object.keys(store).length;
+  const n = liveCount();
   const time = new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
   const el2 = document.getElementById('save-indicator');
   if(!el2) return;
@@ -540,15 +588,22 @@ function updateSaveIndicator(blocked){
     el2.style.color = '#c0392b';
     return;
   }
+  if(localSaveFailed){
+    // Loud on purpose: silently swallowing this is how work gets lost.
+    el2.textContent = `⚠ Could not save on this device — export a CSV from Table view before closing`;
+    el2.style.color = '#c0392b';
+    return;
+  }
   let cloud;
-  if(!cloudLoggedIn())      cloud = ' · ⚠ not signed in';
-  else if(cloudOnline)      cloud = ' · ☁ synced';
-  else                      cloud = ' · ☁ offline (saved on device)';
+  if(!cloudLoggedIn())   cloud = ' · ⚠ not signed in — this device only';
+  else if(cloudDirty)    cloud = cloudOnline ? ' · ☁ saving…' : ' · ☁ offline — will sync when back';
+  else                   cloud = ' · ☁ synced';
   el2.textContent = `Saved: ${n} ${n===1?'business':'businesses'} · ${time}${cloud}`;
-  el2.style.color = '';
+  el2.style.color = cloudDirty ? '#b26a00' : '';
 }
 
-async function saveStore(){
+// Local write only — no cloud. Returns false if the empty-store guard blocked it.
+function writeLocal(){
   const keys = Object.keys(store);
   if(keys.length === 0){
     // Guard: never let an empty in-memory store overwrite non-empty existing data.
@@ -557,9 +612,9 @@ async function saveStore(){
     let existing = null;
     try{ existing = localStorage.getItem(STORE_KEY); }catch(e){}
     if(existing && existing !== '{}' && existing !== 'null'){
-      console.warn('saveStore: refused to overwrite non-empty storage with an empty store.');
+      console.warn('writeLocal: refused to overwrite non-empty storage with an empty store.');
       updateSaveIndicator(true);
-      return;
+      return false;
     }
   }
   try{
@@ -569,7 +624,26 @@ async function saveStore(){
       // Rolling backup: only ever updated on a genuinely non-empty save.
       localStorage.setItem(BACKUP_KEY, json);
     }
-  }catch(e){ console.error('save failed', e); }
+    localSaveFailed = false;
+  }catch(e){
+    // Nearly always the ~5MB quota, and we keep two copies of the list. The live
+    // list matters more than the rolling backup, so drop the backup and retry once.
+    console.error('save failed', e);
+    localSaveFailed = true;
+    try{
+      localStorage.removeItem(BACKUP_KEY);
+      localStorage.setItem(STORE_KEY, JSON.stringify(store));
+      localSaveFailed = false;
+    }catch(e2){ console.error('save failed again after dropping the backup copy', e2); }
+  }
+  storeRev++;
+  updateSaveIndicator(false);
+  return true;
+}
+
+async function saveStore(){
+  if(!writeLocal()) return;
+  if(cloudLoggedIn()) markDirty(true);   // stays set until the server confirms the write
   updateSaveIndicator(false);
   schedulePush();   // mirror the change up to the cloud (debounced, offline-safe)
 }
@@ -586,6 +660,7 @@ async function saveSettings(){
   // "has website" or "show all" choice.
   const s = { loc:el('loc').value, cat:el('cat').value, rad:el('rad').value };
   try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
+  if(cloudLoggedIn()) markDirty(true);
   schedulePush();
 }
 
@@ -597,6 +672,9 @@ async function saveSettings(){
 let cloudSession = null;   // { access_token, refresh_token, user_id, email }
 let cloudOnline  = true;   // last known connectivity to Supabase
 let pushTimer    = null;
+let retryTimer   = null;
+let retryStep    = 0;
+const RETRY_DELAYS = [5000, 15000, 60000, 300000];   // back off, but never give up
 
 function cloudLoggedIn(){ return !!(cloudSession && cloudSession.refresh_token); }
 
@@ -682,42 +760,108 @@ async function cloudPull(){
   return { store: rows[0].store || {}, settings: rows[0].settings || null, empty:false };
 }
 
-async function cloudPush(){
-  if(!cloudLoggedIn()) return;
+// Upload the current store. The dirty flag is only cleared when the server
+// actually confirms the write, so a failed save can never look like a saved one.
+async function pushNow(useKeepalive){
+  if(!cloudLoggedIn()) return false;
   const keys = Object.keys(store);
   // Same safety rule as local: never overwrite a non-empty cloud copy with an empty store.
   if(keys.length === 0){
     const cur = await cloudPull().catch(()=>null);
     if(cur && !cur.empty && Object.keys(cur.store).length > 0){
-      console.warn('cloudPush: refused to overwrite non-empty cloud with an empty store');
+      console.warn('pushNow: refused to overwrite non-empty cloud with an empty store');
       updateSaveIndicator(false);
-      return;
+      return false;
     }
   }
   let settings = {};
   try{ settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; }catch(e){}
+  const rev = storeRev;   // anything saved while this request is in flight is not in this body
+  const body = JSON.stringify({ user_id: cloudSession.user_id, store, settings, updated_at: new Date().toISOString() });
+  // Browsers cap `keepalive` request bodies at 64KB and reject anything larger
+  // outright. Sending every push that way meant that once the list grew past
+  // ~64KB, every single cloud save failed silently. Only use it for the
+  // last-gasp flush as the page goes away, and only when the body actually fits.
+  const ka = !!useKeepalive && body.length < 60000;
   try{
     const r = await cloudApi('/rest/v1/user_data?on_conflict=user_id', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', Prefer:'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ user_id: cloudSession.user_id, store, settings, updated_at: new Date().toISOString() }),
-      keepalive: true
+      body,
+      keepalive: ka
     });
     cloudOnline = r.ok;
-  }catch(e){ cloudOnline = false; }
-  updateSaveIndicator(false);
+    if(r.ok){
+      clearRetry();
+      // Only call it clean if nothing was changed while the request was in the
+      // air — otherwise that newer change would sit here looking already saved.
+      if(rev === storeRev) markDirty(false); else schedulePush();
+    } else scheduleRetry();
+    updateSaveIndicator(false);
+    return r.ok;
+  }catch(e){
+    cloudOnline = false;
+    scheduleRetry();
+    updateSaveIndicator(false);
+    return false;
+  }
+}
+
+function clearRetry(){ if(retryTimer){ clearTimeout(retryTimer); retryTimer = null; } retryStep = 0; }
+// Keep trying until the change is actually in the cloud — a single failed push
+// used to mean the change simply never left this device.
+function scheduleRetry(){
+  if(!cloudLoggedIn() || retryTimer) return;
+  const d = RETRY_DELAYS[Math.min(retryStep, RETRY_DELAYS.length-1)];
+  retryStep++;
+  retryTimer = setTimeout(()=>{ retryTimer = null; if(cloudDirty) syncNow().catch(()=>{}); }, d);
 }
 
 function schedulePush(){
   if(!cloudLoggedIn()) return;
   if(pushTimer) clearTimeout(pushTimer);
-  pushTimer = setTimeout(()=>{ pushTimer = null; cloudPush(); }, 1200);
+  pushTimer = setTimeout(()=>{ pushTimer = null; syncNow().catch(()=>{ scheduleRetry(); }); }, 1200);
 }
 
-// Union merge: keep every local-only record, let the cloud win on shared keys.
-// Nothing is ever dropped, so a stale device can't erase newer additions.
+// Send whatever is queued right now (tab hidden, page closing).
+function flushPush(){
+  if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
+  if(cloudLoggedIn() && cloudDirty) pushNow(true);
+}
+
+// Merge by change stamp: whichever copy of a business was edited most recently
+// wins. The old rule was "cloud always wins", which is what silently undid a
+// dismissal whenever the change hadn't reached the cloud yet.
 function mergeStores(localStore, cloudStore){
-  return Object.assign({}, localStore || {}, cloudStore || {});
+  const a = localStore || {}, b = cloudStore || {};
+  const out = {};
+  const ids = new Set(Object.keys(a).concat(Object.keys(b)));
+  ids.forEach(id=>{
+    const mine = a[id], theirs = b[id];
+    if(!mine){ out[id] = theirs; return; }
+    if(!theirs){ out[id] = mine; return; }
+    const ms = stampOf(mine), ts = stampOf(theirs);
+    if(ts > ms){ out[id] = theirs; return; }
+    if(ms > ts){ out[id] = mine; return; }
+    // Same stamp (usually two pre-stamp records): keep whichever holds a real
+    // decision rather than dropping one, and never let a tie delete data.
+    if(mine.deleted !== theirs.deleted){ out[id] = mine.deleted ? theirs : mine; return; }
+    if(mine.status === 'new' && theirs.status && theirs.status !== 'new'){ out[id] = theirs; return; }
+    out[id] = mine;
+  });
+  return out;
+}
+
+// Re-draw after a merge changed something — but never yank the DOM out from
+// under something being typed into. The store is already correct; the view
+// catches up on the next natural render.
+function rerenderAll(){
+  refreshStats();
+  const a = document.activeElement;
+  if(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+  if(typeof renderList  === 'function') renderList();
+  if(typeof renderTable === 'function') renderTable();
+  updateSaveIndicator(false);
 }
 
 // Pull the cloud copy, merge it with whatever is local, then push the result.
@@ -725,9 +869,20 @@ async function syncNow(){
   if(!cloudLoggedIn()) return;
   let pulled = null;
   try{ pulled = await cloudPull(); }catch(e){ pulled = null; }
-  if(pulled && !pulled.empty){
+  if(!pulled){
+    // Couldn't reach the cloud. The change stays queued locally and dirty, and
+    // the retry timer keeps trying — it is never dropped on the floor.
+    cloudOnline = false;
+    scheduleRetry();
+    updateSaveIndicator(false);
+    return;
+  }
+  let changed = false;
+  if(!pulled.empty){
+    const before = JSON.stringify(store);
     store = mergeStores(store, pulled.store);
-    await saveStore();                 // persist merged result locally (guarded)
+    normaliseStore();
+    if(JSON.stringify(store) !== before){ changed = true; writeLocal(); }
     if(pulled.settings){
       try{
         if(!localStorage.getItem(SETTINGS_KEY)){
@@ -736,11 +891,8 @@ async function syncNow(){
       }catch(e){}
     }
   }
-  await cloudPush();                    // upload merged / first-time state
-  refreshStats();
-  if(typeof renderList  === 'function') renderList();
-  if(typeof renderTable === 'function') renderTable();
-  updateSaveIndicator(false);
+  await pushNow(false);                 // upload merged / first-time state
+  if(changed) rerenderAll(); else { refreshStats(); updateSaveIndicator(false); }
 }
 
 /* ---------- login overlay + account bar ---------- */
@@ -1107,7 +1259,7 @@ async function runSearch(){
     const siteMode = el('sitefilter') ? el('sitefilter').value : 'none'; // 'none' | 'has' | 'all'
     let alreadyCount=0, siteFiltered=0;
     let fresh=raw.filter(r=>{
-      if(store[r.id]){ alreadyCount++; return false; }
+      if(alreadyActioned(r)){ alreadyCount++; return false; }
       if(siteMode==='none' && r.website){ siteFiltered++; return false; }
       if(siteMode==='has' && !r.website){ siteFiltered++; return false; }
       return true;
@@ -1188,6 +1340,23 @@ function markerColor(score){
   return '#8a94a6';
 }
 
+/* ---------- visited pins ----------
+   Opening a pin marks it as visited and turns it purple, so a long triage
+   session across a busy town never has you re-opening the same dot. This is a
+   browsing aid rather than data about the business, so it lives in its own
+   device-local key instead of the prospect record — nothing here is synced to
+   the cloud, and clearing it loses nothing but the colour. */
+const VISITED_KEY='visited_v1';
+const VISITED_COLOR='#7B5EC7';
+let visited={};              // id -> timestamp first opened
+function loadVisited(){
+  try{ visited=JSON.parse(localStorage.getItem(VISITED_KEY)||'{}')||{}; }catch(e){ visited={}; }
+}
+function saveVisited(){ try{ localStorage.setItem(VISITED_KEY, JSON.stringify(visited)); }catch(e){} }
+function isVisited(id){ return !!visited[id]; }
+// The colour a single pin should be drawn in right now.
+function pinColor(r){ return isVisited(r.id) ? VISITED_COLOR : markerColor(r.score||scoreOf(r,r.core)); }
+
 function ensureMap(){
   if(map || !hasMap()) return map;
   map = L.map('map', { scrollWheelZoom:true, zoomControl:true });
@@ -1217,6 +1386,11 @@ function mapPopupHtml(r, added){
          <button type="button" onclick="addFromMap('${r.id}')" style="flex:1;padding:6px 8px;border:0;border-radius:6px;background:#3F8F5E;color:#fff;font-weight:600;cursor:pointer;">Add to list</button>
          <button type="button" onclick="dismissFromMap('${r.id}')" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#0f172a;cursor:pointer;">Dismiss</button>
        </div>`;
+  // Opening the popup is what marks a pin visited, so this line is always the
+  // "yes, purple now" confirmation — with a way back for a mis-tap.
+  const seen = isVisited(r.id)
+    ? `<div style="font-size:11px;margin-top:8px;color:${VISITED_COLOR};font-weight:600;">● Visited <a href="#" onclick="unvisitFromMap('${r.id}');return false;" style="color:#64748b;font-weight:400;text-decoration:underline;margin-left:4px;">undo</a></div>`
+    : '';
   return `<div style="min-width:200px;max-width:270px;font-family:inherit;color:#0f172a;">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
       <div style="font-weight:700;font-size:14px;">${esc(r.name)}</div>
@@ -1226,7 +1400,18 @@ function mapPopupHtml(r, added){
     ${rows.join('')}
     <div style="font-size:12px;margin-top:6px;"><a href="${mapsLink(r.name, r.addr||r.area, r.lat, r.lon)}" target="_blank" rel="noopener">Check on Google Maps ↗</a>${(r.lat&&r.lon)?` <span style="opacity:0.5;">·</span> <a href="${mapsPinLink(r.lat, r.lon)}" target="_blank" rel="noopener" title="Drop a pin at the exact spot — use this if the name search finds nothing">exact spot ↗</a>`:''}</div>
     ${btns}
+    ${seen}
   </div>`;
+}
+
+// Turn a pin back to its fit colour after a mis-tap, without closing the popup.
+function unvisitFromMap(id){
+  delete visited[id];
+  saveVisited();
+  const r = mapPlot.find(x=>x.id===id) || lastResults.find(x=>x.id===id);
+  const m = resultMarkers[id];
+  if(m && r){ m.setStyle({ fillColor: pinColor(r) }); m.setPopupContent(mapPopupHtml(r, !!rec(r.id))); }
+  updateMapHint();
 }
 
 function renderMap(list, geo, rad){
@@ -1270,8 +1455,9 @@ function clusterGroups(records){
 function clusterPopupHtml(group){
   const rows = group.map(r=>{
     const fit = r.score||scoreOf(r,r.core);
+    const tick = isVisited(r.id) ? `<span style="color:${VISITED_COLOR};" title="Visited">● </span>` : '';
     return `<div style="padding:5px 0;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
-      <div><div style="font-weight:600;font-size:12px;">${esc(r.name)}</div>
+      <div><div style="font-weight:600;font-size:12px;">${tick}${esc(r.name)}</div>
       <div style="font-size:11px;opacity:0.7;">${esc(r.cat||'')}${r.website?'':' · no website'}</div></div>
       <div style="display:flex;gap:4px;flex:0 0 auto;">
         <button type="button" onclick="addFromMap('${r.id}')" style="padding:3px 6px;border:0;border-radius:5px;background:#3F8F5E;color:#fff;font-size:11px;font-weight:600;cursor:pointer;">Add</button>
@@ -1289,19 +1475,31 @@ function drawMarkers(){
   clusterGroups(mapPlot).forEach(g=>{
     if(g.length===1){
       const r=g[0];
-      const m=L.circleMarker([r.lat,r.lon], { radius:8, color:'#fff', weight:1.5, fillColor:markerColor(r.score||scoreOf(r,r.core)), fillOpacity:0.95 });
-      m.bindPopup(mapPopupHtml(r, !!store[r.id]));
+      const m=L.circleMarker([r.lat,r.lon], { radius:8, color:'#fff', weight:1.5, fillColor:pinColor(r), fillOpacity:0.95 });
+      m.bindPopup(mapPopupHtml(r, !!rec(r.id)));
+      // Opening the pin IS the visit — recolour immediately (and refresh the
+      // popup so it shows the ✓/undo line) rather than waiting for a close.
+      m.on('popupopen', ()=>{
+        if(isVisited(r.id)) return;
+        visited[r.id]=Date.now(); saveVisited();
+        m.setStyle({ fillColor: VISITED_COLOR });
+        m.setPopupContent(mapPopupHtml(r, !!rec(r.id)));
+        updateMapHint();
+      });
       m.addTo(markerLayer);
       resultMarkers[r.id]=m;
       return;
     }
     clustered += g.length;
+    // A stack goes purple only once every business in it has been opened, so a
+    // cluster still holding something unseen keeps its fit colour.
+    const allSeen = g.every(r=>isVisited(r.id));
     const best = Math.max.apply(null, g.map(r=>r.score||scoreOf(r,r.core)));
     const lat = g.reduce((s,r)=>s+r.lat,0)/g.length, lon = g.reduce((s,r)=>s+r.lon,0)/g.length;
     const size = g.length<10 ? 30 : (g.length<100 ? 36 : 42);
     const m = L.marker([lat,lon], { icon: L.divIcon({
       className:'',
-      html:`<div style="width:${size}px;height:${size}px;border-radius:50%;background:${markerColor(best)};border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45);color:#fff;text-align:center;font:700 ${g.length<100?13:11}px/${size-4}px system-ui,-apple-system,sans-serif;">${g.length}</div>`,
+      html:`<div style="width:${size}px;height:${size}px;border-radius:50%;background:${allSeen?VISITED_COLOR:markerColor(best)};border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45);color:#fff;text-align:center;font:700 ${g.length<100?13:11}px/${size-4}px system-ui,-apple-system,sans-serif;">${g.length}</div>`,
       iconSize:[size,size], iconAnchor:[size/2,size/2]
     })});
     // Click zooms into the stack. When they're literally on the same building
@@ -1315,8 +1513,17 @@ function drawMarkers(){
     }
     m.addTo(markerLayer);
   });
+  lastClustered = clustered;
+  updateMapHint();
+}
+let lastClustered = 0;
+function updateMapHint(){
   const hint=el('map-hint');
-  if(hint) hint.textContent = mapPlot.length + ' shown' + (clustered ? ` · ${clustered} stacked, zoom in or tap a number` : '');
+  if(!hint) return;
+  const seen = mapPlot.filter(r=>isVisited(r.id)).length;
+  hint.textContent = mapPlot.length + ' shown'
+    + (seen ? ` · ${seen} visited` : '')
+    + (lastClustered ? ` · ${lastClustered} stacked, zoom in or tap a number` : '');
 }
 
 // Leaflet needs a visible, correctly-sized container before it can fit bounds.
@@ -1337,16 +1544,36 @@ function setResultView(v){
   if(showMap){ ensureMap(); applyMapView(); }
 }
 
+// Once a business is on your list — or binned — there is nothing left to do
+// with its dot, so the pin goes. What's left on the map is exactly what still
+// needs a decision, which is the whole point of triaging from the map.
+function removeMapPin(id){
+  if(!map) return;
+  if(!mapPlot.some(x=>x.id===id)) return;
+  mapPlot = mapPlot.filter(x=>x.id!==id);
+  map.closePopup();
+  if(markerLayer) drawMarkers();
+  // Nothing left to plot: fall back to the list so an empty map isn't the view.
+  if(!mapPlot.length){
+    if(el('result-views')) el('result-views').style.display='none';
+    if(el('map')) el('map').style.display='none';
+    if(el('results')) el('results').style.display='';
+  }
+}
+// Add all / Dismiss all — clear the lot in one redraw rather than one per pin.
+function clearMapPins(){
+  if(!map || !mapPlot.length) return;
+  const last = mapPlot[mapPlot.length-1].id;
+  mapPlot = mapPlot.filter(x=>x.id===last);
+  removeMapPin(last);
+}
+
 // Add / dismiss straight from a map pin — same record + cloud sync as the cards.
 async function addFromMap(id){
   const r=lastResults.find(x=>x.id===id); if(!r) return;
   store[id]=recordFrom(r, r.website?'has_website':'new');
   await saveStore(); refreshStats();
-  const m=resultMarkers[id];
-  // Drawn as its own pin: recolour in place so the popup stays open. Inside a
-  // cluster: redraw, which refreshes that cluster's list.
-  if(m){ m.setStyle({fillColor:'#3F8F5E'}); m.setPopupContent(mapPopupHtml(r,true)); }
-  else if(mapPlot.length) drawMarkers();
+  removeMapPin(id);
   lastResults=lastResults.filter(x=>x.id!==id);
   if(el('results')) el('results').innerHTML=lastResults.map(x=>bizCard(x,'result')).join('');
 }
@@ -1354,8 +1581,7 @@ async function dismissFromMap(id){
   const r=lastResults.find(x=>x.id===id); if(!r) return;
   store[id]=recordFrom(r,'dismissed');
   await saveStore(); refreshStats();
-  mapPlot = mapPlot.filter(x=>x.id!==id);
-  if(markerLayer) drawMarkers();
+  removeMapPin(id);
   lastResults=lastResults.filter(x=>x.id!==id);
   if(el('results')) el('results').innerHTML=lastResults.map(x=>bizCard(x,'result')).join('');
 }
@@ -1364,15 +1590,54 @@ async function dismissFromMap(id){
 function normUrl(s){ return (s||'').replace(/^\/\//,'').replace(/^https?:\/\//,'').toLowerCase().replace(/\/$/,'').trim(); }
 function normPhone(s){ return (s||'').replace(/[\s\-().+]/g,''); }
 function normName(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+// True when this is a business you've already dealt with — including when
+// OpenStreetMap has re-listed it under a new element id (a node replaced by a
+// way, an element redrawn). Matching on id alone meant a dismissal quietly
+// stopped working the moment the id changed and the same shop was back in your
+// results. Only records you actively killed off (dismissed / has website / not
+// interested / archived) are hidden this way; anything already on your live
+// list still shows with its "already have a match" warning.
+// Built once per search rather than once per result — a big town against a big
+// list is thousands of comparisons otherwise. Rebuilt whenever the list changes.
+let deadIdx = null, deadIdxRev = -1;
+function deadIndex(){
+  if(deadIdx && deadIdxRev === storeRev) return deadIdx;
+  const byUrl = new Map(), byPhone = new Map(), byName = new Map();
+  liveRecords().forEach(r=>{
+    if(!DEAD.has(r.status)) return;
+    const u = normUrl(r.website);   if(u) byUrl.set(u, r);
+    const p = normPhone(r.phone);   if(p) byPhone.set(p, r);
+    const n = normName(r.name);
+    if(n){ if(!byName.has(n)) byName.set(n, []); byName.get(n).push(r); }
+  });
+  deadIdx = { byUrl, byPhone, byName };
+  deadIdxRev = storeRev;
+  return deadIdx;
+}
+function alreadyActioned(r){
+  if(rec(r.id)) return true;
+  const idx = deadIndex();
+  const rUrl = normUrl(r.website);   if(rUrl && idx.byUrl.has(rUrl))     return true;
+  const rPhone = normPhone(r.phone); if(rPhone && idx.byPhone.has(rPhone)) return true;
+  const rName = normName(r.name);    if(!rName) return false;
+  const sameName = idx.byName.get(rName); if(!sameName) return false;
+  const rArea = normName(r.area);
+  for(const other of sameName){
+    if(rArea && rArea===normName(other.area)) return true;
+    if(r.lat && r.lon && other.lat && other.lon &&
+       distanceMetres(r.lat, r.lon, other.lat, other.lon) < 250) return true;
+  }
+  return false;
+}
 function dupeCheck(r){
   const rUrl=normUrl(r.website), rPhone=normPhone(r.phone), rName=normName(r.name), rArea=normName(r.area);
-  for(const rec of Object.values(store)){
-    if(rec.id===r.id) continue;
-    if(rUrl  && normUrl(rec.website)  && rUrl===normUrl(rec.website))   return rec.name;
-    if(rPhone && normPhone(rec.phone) && rPhone===normPhone(rec.phone)) return rec.name;
-    if(rName  && normName(rec.name)   && rName===normName(rec.name))    return rec.name;
-    if(rName  && rArea && normName(rec.name) && normName(rec.area) &&
-       rName===normName(rec.name) && rArea===normName(rec.area))        return rec.name;
+  for(const other of liveRecords()){
+    if(other.id===r.id) continue;
+    if(rUrl  && normUrl(other.website)  && rUrl===normUrl(other.website))   return other.name;
+    if(rPhone && normPhone(other.phone) && rPhone===normPhone(other.phone)) return other.name;
+    if(rName  && normName(other.name)   && rName===normName(other.name))    return other.name;
+    if(rName  && rArea && normName(other.name) && normName(other.area) &&
+       rName===normName(other.name) && rArea===normName(other.area))        return other.name;
   }
   return null;
 }
@@ -1397,9 +1662,9 @@ function bizCard(r, mode){
       <button class="dismiss" onclick="dismissOne('${r.id}')">Dismiss</button>
     </div>`;
   }else{
-    const rec=store[r.id];
-    const opts=Object.keys(STATUS_LABELS).map(k=>`<option value="${k}"${rec.status===k?' selected':''}>${STATUS_LABELS[k]}</option>`).join('');
-    const lastContactedVal = rec.lastContactedAt ? new Date(rec.lastContactedAt).toISOString().slice(0,10) : '';
+    const cur=rec(r.id)||r;   // list mode renders live records, so this is r itself
+    const opts=Object.keys(STATUS_LABELS).map(k=>`<option value="${k}"${cur.status===k?' selected':''}>${STATUS_LABELS[k]}</option>`).join('');
+    const lastContactedVal = cur.lastContactedAt ? new Date(cur.lastContactedAt).toISOString().slice(0,10) : '';
     actions=`<div class="biz-act">
       <select class="status-sel" onchange="setStatus('${r.id}', this.value)">${opts}</select>
       <label class="last-contact-lab">Last contacted
@@ -1414,11 +1679,11 @@ function bizCard(r, mode){
     <button class="tag-btn" onclick="appendTag('${r.id}','Website down')">Website down</button>
   </div>`;
   const notes = mode==='list'
-    ? `<textarea class="notes-in" data-rid="${esc(r.id)}" placeholder="Notes…" oninput="setNote('${r.id}', this.value)">${esc(store[r.id].notes||'')}</textarea>${tagBtns}`
+    ? `<textarea class="notes-in" data-rid="${esc(r.id)}" placeholder="Notes…" oninput="setNote('${r.id}', this.value)">${esc(r.notes||'')}</textarea>${tagBtns}`
     : `<textarea class="notes-in" data-rid="${esc(r.id)}" placeholder="Notes (optional) — saved when you add to list…"></textarea>${tagBtns}`;
   const dupe = mode==='result' ? dupeCheck(r) : null;
   const dupeWarn = dupe ? `<div class="dupe-warn">⚠️ Already have a match: <b>${esc(dupe)}</b></div>` : '';
-  const dead = mode==='list' && DEAD.has(store[r.id].status) ? ' dead':'';
+  const dead = mode==='list' && DEAD.has(r.status) ? ' dead':'';
   const dupeClass = dupe ? ' dupe-card' : '';
   const score = (mode==='result'? r.score : scoreOf(r, r.core));
   return `<div class="biz${dead}${dupeClass}">
@@ -1437,7 +1702,8 @@ function bizCard(r, mode){
 /* ---------- result actions ---------- */
 function recordFrom(r, status){
   return { id:r.id, name:r.name, website:r.website, phone:r.phone, area:r.area, addr:r.addr, cat:r.cat,
-    lat:r.lat, lon:r.lon, core:r.core, status, notes:'', message:'', social:'', addedAt:Date.now(), lastContactedAt:null };
+    lat:r.lat, lon:r.lon, core:r.core, status, notes:'', message:'', social:'',
+    addedAt:Date.now(), lastContactedAt:null, updatedAt:nowStamp() };
 }
 // Manually add a business the user already knows about (not from search).
 // Builds the same record shape as recordFrom so it renders/syncs identically.
@@ -1451,7 +1717,7 @@ async function addManual(){
   store[id]={ id, name, website:el('m-web').value.trim(), phone:el('m-phone').value.trim(),
     area:el('m-area').value.trim(), cat:catLabel, lat:null, lon:null, core:wellness,
     status:'new', notes:el('m-notes').value.trim(), message:'', social:'',
-    addedAt:Date.now(), lastContactedAt:null };
+    addedAt:Date.now(), lastContactedAt:null, updatedAt:nowStamp() };
   await saveStore();
   refreshStats();
   if(typeof renderList==='function') renderList();
@@ -1481,20 +1747,21 @@ async function markHasWebsite(id){
 }
 async function addAll(){
   lastResults.forEach(r=>{
-    if(!store[r.id]){
+    if(!rec(r.id)){
       store[r.id]=recordFrom(r, r.website?'has_website':'new');
       const noteEl=document.querySelector(`#results textarea[data-rid="${r.id}"]`);
       store[r.id].notes=(noteEl?noteEl.value.trim():'');
     }
   });
-  await saveStore(); lastResults=[]; el('results').innerHTML=''; el('find-msg').innerHTML='<div class="msg"><b>Added.</b> Check the My list tab to work through them.</div>'; refreshStats();
+  await saveStore(); lastResults=[]; clearMapPins(); el('results').innerHTML=''; el('find-msg').innerHTML='<div class="msg"><b>Added.</b> Check the My list tab to work through them.</div>'; refreshStats();
 }
 async function dismissAll(){
-  lastResults.forEach(r=>{ if(!store[r.id]) store[r.id]=recordFrom(r,'dismissed'); });
-  await saveStore(); lastResults=[]; el('results').innerHTML=''; el('find-msg').innerHTML='<div class="msg">Cleared. Those won’t show up again.</div>'; refreshStats();
+  lastResults.forEach(r=>{ if(!rec(r.id)) store[r.id]=recordFrom(r,'dismissed'); });
+  await saveStore(); lastResults=[]; clearMapPins(); el('results').innerHTML=''; el('find-msg').innerHTML='<div class="msg">Cleared. Those won’t show up again.</div>'; refreshStats();
 }
 function pruneAndRerender(id){
   lastResults=lastResults.filter(x=>x.id!==id);
+  removeMapPin(id);   // keep the map in step with the cards, whichever view you triaged from
   const card=[...document.querySelectorAll('#results .biz')];
   // simplest: re-render remaining
   if(lastResults.length){
@@ -1506,35 +1773,44 @@ function pruneAndRerender(id){
   refreshStats();
 }
 
-/* ---------- list actions ---------- */
+/* ---------- list actions ----------
+   Every one of these stamps the record via touch() before saving, so the change
+   carries its own "this is newer" proof into the next merge. */
 async function setStatus(id, val){
-  if(store[id]){
+  if(rec(id)){
     store[id].status=val;
     // auto-stamp last contacted the first time a message goes out, if not already set
     if(val==='message_sent' && !store[id].lastContactedAt) store[id].lastContactedAt=Date.now();
+    touch(id);
     await saveStore(); renderList(); renderTable(); refreshStats();
   }
 }
 async function setLastContacted(id, val){
-  if(store[id]){ store[id].lastContactedAt = val ? new Date(val).getTime() : null; await saveStore(); refreshStats(); }
+  if(rec(id)){ store[id].lastContactedAt = val ? new Date(val).getTime() : null; touch(id); await saveStore(); refreshStats(); }
 }
-async function setNote(id, val){ if(store[id]){ store[id].notes=val; await saveStore(); } }
-async function setMessage(id, val){ if(store[id]){ store[id].message=val; await saveStore(); } }
-async function setPhone(id, val){ if(store[id]){ store[id].phone=val.trim(); await saveStore(); refreshStats(); } }
-async function setSocial(id, val){ if(store[id]){ store[id].social=val.trim(); await saveStore(); } }
-async function removeOne(id){ delete store[id]; await saveStore(); renderList(); refreshStats(); }
+async function setNote(id, val){ if(rec(id)){ store[id].notes=val; touch(id); await saveStore(); } }
+async function setMessage(id, val){ if(rec(id)){ store[id].message=val; touch(id); await saveStore(); } }
+async function setPhone(id, val){ if(rec(id)){ store[id].phone=val.trim(); touch(id); await saveStore(); refreshStats(); } }
+async function setSocial(id, val){ if(rec(id)){ store[id].social=val.trim(); touch(id); await saveStore(); } }
+// Leave a tombstone rather than deleting the key: a plain delete was simply
+// refilled from the cloud on the next sync, so removals never stuck.
+async function removeOne(id){
+  if(!store[id]) return;
+  store[id] = { id, deleted:true, updatedAt:nowStamp() };
+  await saveStore(); renderList(); renderTable(); refreshStats();
+}
 function appendTag(id, tag){
   const ta=document.querySelector(`textarea[data-rid="${id}"]`);
   if(!ta) return;
   const sep=(ta.value && !ta.value.endsWith(' ') && ta.value!=='') ? ' ' : '';
   ta.value=ta.value+sep+tag;
-  if(store[id]){ store[id].notes=ta.value; saveStore(); }
+  if(rec(id)){ store[id].notes=ta.value; touch(id); saveStore(); }
 }
 
 function renderList(){
   const f=el('filter-status').value;
   const sort=el('sort-by').value;
-  const all=Object.values(store);
+  const all=liveRecords();
   let arr=all.filter(r=>{
     if(f==='all') return true;
     if(f==='active') return !DEAD.has(r.status);
@@ -1575,7 +1851,7 @@ function renderList(){
 
 /* ---------- stats ---------- */
 function refreshStats(){
-  const arr=Object.values(store);
+  const arr=liveRecords();
   const total=arr.length;
   const newc=arr.filter(r=>r.status==='new').length;
   const nosite=arr.filter(r=>!r.website && !DEAD.has(r.status)).length;
@@ -1588,7 +1864,7 @@ function refreshStats(){
     <div class="stat"><div class="n mono">${contacted}</div><div class="l">In play</div></div>
     <div class="stat green"><div class="n mono">${cust}</div><div class="l">Clients</div></div>`;
   // Badge tracks the fresh queue (New) to match what the My list tab now shows.
-  el('list-count').textContent=Object.values(store).filter(r=>r.status==='new').length;
+  el('list-count').textContent=arr.filter(r=>r.status==='new').length;
 }
 
 /* ---------- table view (sortable spreadsheet-style) ---------- */
@@ -1695,7 +1971,7 @@ function sortTable(key){
 function renderTable(){
   const search=(el('table-search').value||'').toLowerCase().trim();
   const f=el('table-filter-status').value;
-  let arr=Object.values(store);
+  let arr=liveRecords();
   arr=arr.filter(r=>{
     if(f==='all') return true;
     if(f==='active') return !DEAD.has(r.status);
@@ -1794,7 +2070,7 @@ function importCSV(){
       const lastContactedStr=get(col('last_contacted'));
       const lastContactedAt = lastContactedStr ? (new Date(lastContactedStr).getTime()||null) : null;
       const type=get(col('type'));
-      if(store[id]){
+      if(rec(id)){
         // update existing record
         if(statusRaw){ const k=labelToKey[statusRaw.toLowerCase()]; if(k) store[id].status=k; }
         if(col('notes')>=0) store[id].notes=notes;
@@ -1803,15 +2079,17 @@ function importCSV(){
         if(col('social')>=0) store[id].social=social;
         if(col('type')>=0 && type) store[id].cat=type;
         if(col('last_contacted')>=0) store[id].lastContactedAt=lastContactedAt;
+        touch(id);
         updated++;
       }else{
-        // restore record that no longer exists in the browser
+        // restore record that no longer exists in the browser (this also revives
+        // one you had removed — an import is an explicit instruction to have it back)
         const name=get(col('name')); if(!name) continue;
         const addedStr=get(col('added'));
         const addedAt=addedStr?(new Date(addedStr).getTime()||Date.now()):Date.now();
         store[id]={ id, name, area:get(col('area')), website:get(col('website')),
           phone, social, cat:type||'', lat:null, lon:null, core:false,
-          status:statusKey, notes, message, addedAt, lastContactedAt };
+          status:statusKey, notes, message, addedAt, lastContactedAt, updatedAt:nowStamp() };
         restored++;
       }
     }
@@ -1824,7 +2102,7 @@ function importCSV(){
   inp.click();
 }
 function exportCSV(){
-  const arr=Object.values(store);
+  const arr=liveRecords();
   if(!arr.length){ alert('Nothing to export yet.'); return; }
   const cols=['name','area','type','status','website','phone','social','notes','message','last_contacted','maps_link','osm_id','added'];
   const rows=arr.map(r=>[
@@ -1860,6 +2138,7 @@ function showTab(t){
 (async function init(){
   await loadStore();          // local first — instant and offline-safe
   loadCloudSession();
+  loadVisited();              // which map pins you've already opened (device-local)
   loadColOrder();
   try{ const v=localStorage.getItem(MAPVIEW_KEY); if(v==='map'||v==='list') resultView=v; }catch(e){}
   const s=await loadSettings();
@@ -1868,34 +2147,27 @@ function showTab(t){
   renderAccountBar();
   updateSaveIndicator(false); // show current state immediately, so an unexpected 0 is visible right away
 
-  // Guarantee save before the page unloads (covers tab close, refresh, navigation).
-  // Uses saveStore()'s guard so an empty in-memory store (e.g. from a failed load)
-  // can never silently overwrite real data already sitting in storage.
-  window.addEventListener('beforeunload', ()=>{
-    const keys = Object.keys(store);
-    if(keys.length === 0){
-      let existing = null;
-      try{ existing = localStorage.getItem(STORE_KEY); }catch(e){}
-      if(existing && existing !== '{}' && existing !== 'null') return; // refuse to wipe
-    }
-    try{
-      const json = JSON.stringify(store);
-      localStorage.setItem(STORE_KEY, json);
-      if(keys.length > 0) localStorage.setItem(BACKUP_KEY, json);
-    }catch(e){}
-  });
+  // Guarantee a local save and flush the cloud queue before the page goes away.
+  // beforeunload alone isn't enough — an installed PWA on a phone is usually
+  // killed without ever firing it, so pagehide and the hidden state matter more.
+  const leaving = ()=>{ writeLocal(); flushPush(); };
+  window.addEventListener('beforeunload', leaving);
+  window.addEventListener('pagehide', leaving);
 
   refreshStats();
   el('loc').addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(); });
   window.addEventListener('resize', sizeTableHeight);
 
-  // Flush any pending cloud save when the tab is hidden or closing (keepalive
-  // lets the request finish even as the page goes away).
   document.addEventListener('visibilitychange', ()=>{
-    if(document.visibilityState==='hidden' && pushTimer){ clearTimeout(pushTimer); pushTimer=null; cloudPush(); }
+    if(document.visibilityState==='hidden'){
+      leaving();
+    } else if(cloudDirty && cloudLoggedIn()){
+      // Came back to a change that never made it up — try again straight away.
+      clearRetry(); syncNow().catch(()=>{});
+    }
   });
   // Re-sync automatically when connectivity comes back.
-  window.addEventListener('online', ()=>{ if(cloudLoggedIn()) syncNow().catch(()=>{}); });
+  window.addEventListener('online', ()=>{ if(cloudLoggedIn()){ clearRetry(); syncNow().catch(()=>{}); } });
 
   // Cloud: restore a stored session and sync in the background; otherwise ask to log in.
   if(cloudLoggedIn()){
