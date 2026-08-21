@@ -313,21 +313,9 @@
         </div>
         <div>
           <label class="f" for="cat">Category</label>
-          <select id="cat">
-            <option value="all">All wellness (recommended)</option>
-            <optgroup label="Wellness">
-              <option value="massage">Massage &amp; bodywork</option>
-              <option value="beauty">Beauty &amp; skincare</option>
-              <option value="therapy">Therapy &amp; counselling</option>
-              <option value="physio">Physio, chiro &amp; osteo</option>
-              <option value="alternative">Acupuncture &amp; holistic</option>
-            </optgroup>
-            <optgroup label="Other local business">
-              <option value="hairnails">Hair &amp; nails</option>
-              <option value="fitness">Yoga, pilates &amp; fitness</option>
-              <option value="retail">Independent retail</option>
-            </optgroup>
-          </select>
+          <!-- Options are built by buildCategoryMenus() from BUCKETS, so the list
+               here can never fall behind the tag sets the search actually uses. -->
+          <select id="cat"></select>
         </div>
       </div>
       <div class="row2">
@@ -380,16 +368,8 @@
         </div>
         <div>
           <label class="f" for="m-cat">Type</label>
-          <select id="m-cat">
-            <option>Massage &amp; bodywork</option>
-            <option>Beauty &amp; skincare</option>
-            <option>Therapy &amp; counselling</option>
-            <option>Physio, chiro &amp; osteo</option>
-            <option>Acupuncture &amp; holistic</option>
-            <option>Yoga, pilates &amp; fitness</option>
-            <option>Hair &amp; nails</option>
-            <option>Other</option>
-          </select>
+          <!-- Also built by buildCategoryMenus(), from the same BUCKETS list. -->
+          <select id="m-cat"></select>
         </div>
       </div>
       <div style="margin-top:2px;">
@@ -475,9 +455,9 @@
 
   <div class="foot" id="foot">
     <b>How the no-repeat works:</b> every business you Add or Dismiss is saved on this device straight away and backed up to your account. New searches skip anything you've already actioned — including a business OpenStreetMap has re-listed under a new id, matched on name plus area, address or phone — and anything marked “Dismissed”, “Has website” or “Not interested” stays hidden for good. The line under the tabs tells you the truth about saving: <b>☁ synced</b> means it's safely in your account, <b>☁ saving…</b> or <b>offline</b> means it's on this device and still queued, and it keeps retrying until it's up.<br>
-    <b>Not seeing enough?</b> “All wellness” covers the five hands-on categories only. Everything under <b>Other local business</b> — Hair &amp; nails, Yoga, pilates &amp; fitness, and Independent retail — is a separate pick, and those are usually the biggest untapped groups in a town. On the map, a numbered circle means several businesses are stacked at that spot: zoom in or tap the number to open them.<br>
+    <b>Choosing a category:</b> each <b>All …</b> option covers just the one group it sits in — “All health &amp; wellness” won’t return a plumber. <b>All business types</b> at the top sweeps every group at once. It runs as several smaller searches — you’ll see a <span class="mono">3/6</span> style counter while it works — so it takes under a minute even at 40 km. Trades, food &amp; drink, motoring and professional services are usually the biggest untapped groups in a town, and every one of them is a one-page-demo business. If a run says some parts didn’t come back, OpenStreetMap was briefly busy: search again and the gaps fill in. On the map, a numbered circle means several businesses are stacked at that spot: zoom in or tap the number to open them.<br>
     <b>Reading the map:</b> pin colour shows fit — green strong, amber medium, grey weaker. Tapping a pin turns it <b>purple</b> so you can see what you've already looked at (the popup has an <b>undo</b> if you tapped by mistake), and a stack turns purple once you've opened everything in it. Add or Dismiss removes the pin altogether, so whatever is still coloured is still to do. Visited pins are remembered on this device only.<br>
-    Data from <a class="link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Coverage of small solo practitioners varies by town — if a search looks thin, widen the radius or try “All wellness”, and use the <b>Maps ↗</b> link on each result to verify with your usual Google check. <b>Maps ↗</b> looks the business up by name with the map already zoomed to its street; if Google has no listing under that name, <b>Pin ↗</b> (“exact spot” in map popups) drops you on the exact coordinates so you can see what is really there.
+    Data from <a class="link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Coverage of small owner-run businesses varies by town — if a search looks thin, widen the radius or move up to the group’s “All …” option, and use the <b>Maps ↗</b> link on each result to verify with your usual Google check. <b>Maps ↗</b> looks the business up by name with the map already zoomed to its street; if Google has no listing under that name, <b>Pin ↗</b> (“exact spot” in map popups) drops you on the exact coordinates so you can see what is really there.
   </div>
 </div>
 
@@ -1017,16 +997,12 @@ function mapsPinLink(lat, lon){
 }
 
 /* ---------- category tag sets ---------- */
-// A lot of small practices sit under a generic healthcare=clinic (or =yes) with
-// no speciality tag at all — "Therapy Truro", "Cathedral Chiropractic". Matching
-// those on the NAME rescues them without dragging in every GP surgery, dentist
-// and NHS site, which is what a bare ["healthcare"="clinic"] would do.
 // Overpass resolves an exact ["key"="value"] straight from its tag index, but a
 // regex value match ["key"~"a|b"] forces a scan of every object carrying that key
-// in the radius. So these stay as exact matches even though it means more
-// statements — folding them into one regex each measurably timed the query out.
-// Regex is used only where it genuinely earns it: free-text keys (name, beauty,
-// healthcare:speciality) whose values are never a fixed vocabulary.
+// in the radius. So nearly everything below is an exact match even though it
+// means many more statements — folding them into one regex each measurably timed
+// the query out. Regex is kept only where it genuinely earns it: free-text keys
+// (name, beauty, healthcare:speciality) whose values are never a fixed vocabulary.
 //
 // Small practices are often mapped as a bare healthcare=clinic with no
 // speciality — "Therapy Truro", "Cathedral Chiropractic". Anchoring on the
@@ -1034,89 +1010,252 @@ function mapsPinLink(lat, lon){
 // rescues them without dragging in every GP surgery, dentist and NHS site.
 const CLINIC_NAME = '["name"~"massage|bodywork|sauna|therap|counsell|psycholog|wellbeing|physio|chiro|osteo|podiat|chiropod|acupunctur|reflexolog|homeopath|naturopath|holistic|reiki|hypno",i]';
 const CLINIC = ['["healthcare"="clinic"]'+CLINIC_NAME, '["healthcare"="yes"]'+CLINIC_NAME];
-// Owner-run high-street shops — the closest profile to the wellness prospects:
-// one location, one owner, often no website. shop=charity is deliberately absent
-// (Oxfam, Age UK and the like are national chains with central web teams), as are
-// supermarkets, chemists, banks and phone shops for the same reason.
-const RETAIL_SHOPS = ['gift','florist','clothes','shoes','bag','jewelry','watches','antiques','books','art','craft','pottery','frame','photo','music','musical_instrument','toys','games','furniture','interior_decoration','houseware','kitchen','curtain','carpet','fabric','wool','stationery','second_hand','bicycle','sports','outdoor','garden_centre'];
-const CATEGORIES = {
-  massage:{core:true, filters:['["shop"="massage"]','["leisure"="spa"]','["amenity"="spa"]','["leisure"="sauna"]','["amenity"="sauna"]','["healthcare:speciality"~"massage",i]','["shop"="beauty"]["beauty"~"massage|spa",i]'].concat(CLINIC)},
-  beauty:{core:true, filters:['["shop"="beauty"]','["shop"="cosmetics"]','["leisure"="spa"]','["beauty"]']},
-  therapy:{core:true, filters:['["healthcare"="psychotherapist"]','["healthcare"="counselling"]','["healthcare"="psychologist"]','["healthcare:speciality"~"psychotherapy|counselling|psychology",i]','["office"="therapist"]','["office"="counsellor"]','["office"="psychotherapist"]'].concat(CLINIC)},
-  physio:{core:true, filters:['["healthcare"="physiotherapist"]','["healthcare"="chiropractor"]','["healthcare"="osteopath"]','["healthcare"="podiatrist"]','["healthcare"="occupational_therapist"]','["healthcare"="speech_therapist"]','["healthcare:speciality"~"physiotherapy|chiropractic|osteopath|podiatry|chiropody",i]'].concat(CLINIC)},
-  alternative:{core:true, filters:['["healthcare"="alternative"]','["healthcare"="acupuncturist"]','["healthcare:speciality"~"acupuncture|reflexolog|homeopath|naturopath|herbal|ayurved|reiki|hypno",i]','["shop"="herbalist"]'].concat(CLINIC)},
-  fitness:{core:false, filters:['["leisure"="fitness_centre"]','["leisure"="sports_centre"]','["sport"~"yoga|pilates",i]']},
-  hairnails:{core:false, filters:['["shop"="hairdresser"]','["shop"="nails"]','["leisure"="nail_salon"]','["shop"="beauty"]["beauty"~"nails",i]']},
-  // Built from RETAIL_SHOPS so the query and the classifier below can never drift apart.
-  retail:{core:false, filters:RETAIL_SHOPS.map(v=>`["shop"="${v}"]`)}
-};
-const RETAIL_SET = new Set(RETAIL_SHOPS);
-const TYPE_LABELS = {
-  retail:'Independent retail',
-  massage:'Massage & bodywork', beauty:'Beauty & skincare', therapy:'Therapy & counselling',
-  physio:'Physio, chiro & osteo', alternative:'Acupuncture & holistic',
-  fitness:'Yoga, pilates & fitness', hairnails:'Hair & nails'
-};
-// The genuine "wellness practice" buckets — hands-on / clinical practitioners.
-// Beauty, hair & nails and fitness deliberately sit OUTSIDE this set so that
-// grooming salons (which OSM floods under shop=beauty) don't get the "core"
-// score bonus, and therefore sort BELOW real wellness in an All-wellness search.
-const CORE_BUCKETS = new Set(['massage','therapy','physio','alternative']);
-function isWellness(t){ return CORE_BUCKETS.has(bucketOf(t)); }
-// Classifies a raw OSM tag set into one of the app's own category buckets,
-// mirroring the logic in CATEGORIES above so results always show a
-// business "type" that matches the language used in the Category dropdown,
-// rather than a raw (and often blank) OSM tag value.
-function bucketOf(t){
-  const hc=(t.healthcare||'').toLowerCase();
-  const hcs=(t['healthcare:speciality']||'').toLowerCase();
-  const shop=(t.shop||'').toLowerCase();
-  const leisure=(t.leisure||'').toLowerCase();
-  const office=(t.office||'').toLowerCase();
-  const amenity=(t.amenity||'').toLowerCase();
-  const sport=(t.sport||'').toLowerCase();
-  const beauty=(t.beauty||'').toLowerCase();
+// Owner-run high-street shops. shop=charity is deliberately absent (Oxfam, Age UK
+// and the like are national chains with central web teams), as are supermarkets,
+// chemists, banks and phone shops for the same reason. Garden centres and camera
+// shops used to sit here too; they now have buckets of their own below.
+const RETAIL_SHOPS = ['gift','florist','clothes','shoes','bag','jewelry','watches','antiques','books','art','craft','pottery','frame','music','musical_instrument','toys','games','furniture','interior_decoration','houseware','kitchen','curtain','carpet','fabric','wool','stationery','second_hand','bicycle','sports','outdoor'];
 
-  // Grooming salons — nails, brows, lashes, tanning, waxing, hair removal —
-  // are overwhelmingly tagged shop=beauty in OSM. Catch them here so they are
-  // classified as "Hair & nails" (non-core) rather than passing through as
-  // generic "beauty" and outranking real wellness practices.
-  if(shop==='hairdresser'||shop==='nails'||leisure==='nail_salon'||
-     /nail|manicure|pedicure|eyebrow|\bbrow|lash|eyelash|tanning|\btan\b|waxing|hair_removal|threading/.test(beauty)) return 'hairnails';
-  if(leisure==='fitness_centre'||leisure==='sports_centre'||/yoga|pilates/.test(sport)) return 'fitness';
-  // Checked before the wellness buckets, but these shop values don't overlap with
-  // any of them, so the order is for readability rather than correctness.
-  if(RETAIL_SET.has(shop)) return 'retail';
-  if(hc==='alternative'||hc==='acupuncturist'||/acupunctur|reflexolog|homeopath|naturopath|herbal|ayurved|reiki|hypno/.test(hcs)||shop==='herbalist') return 'alternative';
-  if(hc==='physiotherapist'||hc==='chiropractor'||hc==='osteopath'||hc==='podiatrist'||hc==='occupational_therapist'||hc==='speech_therapist'||/physiotherapy|chiropractic|osteopath|podiatry|chiropody/.test(hcs)) return 'physio';
-  if(hc==='psychotherapist'||hc==='counselling'||hc==='psychologist'||office==='therapist'||office==='counsellor'||office==='psychotherapist'||/psychotherapy|counselling|psychology/.test(hcs)) return 'therapy';
-  if(shop==='massage'||leisure==='spa'||amenity==='spa'||leisure==='sauna'||amenity==='sauna'||/massage/.test(hcs)||beauty.includes('massage')||beauty.includes('spa')) return 'massage';
-  if(shop==='beauty'||shop==='cosmetics'||beauty) return 'beauty';
-  // Generic healthcare=clinic/centre matched purely on its name (see CLINIC
-  // above) — bucket it from the name so it still shows a sensible type label.
-  if(hc){
+// Sectors are only a grouping for the Category dropdown — each one gets an
+// optgroup and, where it holds more than one bucket, an "All …" option.
+const SECTORS = {
+  wellness:{label:'Health & wellness'},
+  salon:{label:'Salons, fitness & grooming'},
+  food:{label:'Food & drink'},
+  home:{label:'Trades & home services'},
+  motor:{label:'Motoring'},
+  pet:{label:'Pets & animals'},
+  pro:{label:'Professional services'},
+  creative:{label:'Creative & makers'},
+  learn:{label:'Education & childcare'},
+  shops:{label:'Independent retail'}
+};
+
+// Every bucket is defined once, here, and that one definition drives three things
+// that used to be written out separately and could drift apart: the Overpass
+// filters, the type label shown on a card, and the classifier that maps a raw OSM
+// tag set back to a bucket. `tags` are exact key=value pairs — indexed (so fast)
+// and reversible (so they classify for free). `extra` holds the few regex and
+// compound filters that can't be reversed; those are classified by PRE_MATCH /
+// POST_MATCH below instead.
+//
+// `prime` marks the profile that actually converts for a one-page demo: one
+// location, one owner, service-led, and usually no website worth the name.
+// Chain-heavy or browse-driven buckets — gyms and leisure centres, car dealers,
+// takeaways, pet shops, retail — are deliberately not prime, so a mixed search
+// sorts them below the businesses worth building for.
+const BUCKETS = {
+  massage:{sector:'wellness', prime:true, label:'Massage & bodywork',
+    tags:{shop:['massage'], leisure:['spa','sauna'], amenity:['spa','sauna']},
+    extra:['["healthcare:speciality"~"massage",i]','["shop"="beauty"]["beauty"~"massage|spa",i]'].concat(CLINIC)},
+  beauty:{sector:'wellness', prime:true, label:'Beauty & skincare',
+    tags:{shop:['beauty','cosmetics']},
+    extra:['["leisure"="spa"]','["beauty"]']},
+  therapy:{sector:'wellness', prime:true, label:'Therapy & counselling',
+    tags:{healthcare:['psychotherapist','counselling','psychologist'], office:['therapist','counsellor','psychotherapist']},
+    extra:['["healthcare:speciality"~"psychotherapy|counselling|psychology",i]'].concat(CLINIC)},
+  physio:{sector:'wellness', prime:true, label:'Physio, chiro & osteo',
+    tags:{healthcare:['physiotherapist','chiropractor','osteopath','podiatrist','occupational_therapist','speech_therapist']},
+    extra:['["healthcare:speciality"~"physiotherapy|chiropractic|osteopath|podiatry|chiropody",i]'].concat(CLINIC)},
+  alternative:{sector:'wellness', prime:true, label:'Acupuncture & holistic',
+    tags:{healthcare:['alternative','acupuncturist'], shop:['herbalist']},
+    extra:['["healthcare:speciality"~"acupuncture|reflexolog|homeopath|naturopath|herbal|ayurved|reiki|hypno",i]'].concat(CLINIC)},
+
+  hairnails:{sector:'salon', prime:true, label:'Hair & nails',
+    tags:{shop:['hairdresser','nails'], leisure:['nail_salon']},
+    extra:['["shop"="beauty"]["beauty"~"nails",i]']},
+  barber:{sector:'salon', prime:true, label:'Barbers',
+    tags:{shop:['barber']}},
+  tattoo:{sector:'salon', prime:true, label:'Tattoo & piercing',
+    tags:{shop:['tattoo','piercing']}},
+  fitness:{sector:'salon', prime:false, label:'Yoga, pilates & fitness',
+    tags:{leisure:['fitness_centre','sports_centre']},
+    extra:['["sport"~"yoga|pilates",i]']},
+
+  cafe:{sector:'food', prime:true, label:'Cafés & coffee shops',
+    tags:{amenity:['cafe','ice_cream']}},
+  restaurant:{sector:'food', prime:true, label:'Restaurants',
+    tags:{amenity:['restaurant']}},
+  pub:{sector:'food', prime:true, label:'Pubs, bars & breweries',
+    tags:{amenity:['pub','bar','biergarten'], craft:['brewery','winery','distillery']}},
+  foodshop:{sector:'food', prime:true, label:'Bakers, butchers & delis',
+    tags:{shop:['bakery','pastry','butcher','deli','greengrocer','cheese','seafood','farm','confectionery','chocolate','wine','health_food','coffee','tea','dairy','spices']}},
+  catering:{sector:'food', prime:true, label:'Catering & event venues',
+    tags:{shop:['caterer'], craft:['caterer'], amenity:['events_venue']}},
+  takeaway:{sector:'food', prime:false, label:'Takeaways',
+    tags:{amenity:['fast_food']}},
+
+  homeserv:{sector:'home', prime:true, label:'Plumbers, electricians & home trades',
+    tags:{craft:['plumber','electrician','painter','hvac','gasfitter','chimney_sweeper','electronics_repair','key_cutter'], shop:['locksmith']}},
+  building:{sector:'home', prime:true, label:'Builders & construction trades',
+    tags:{craft:['builder','carpenter','joiner','roofer','plasterer','tiler','floorer','stonemason','scaffolder','window_construction','glaziery','insulation','metal_construction','blacksmith']}},
+  garden:{sector:'home', prime:true, label:'Gardeners & landscapers',
+    tags:{craft:['gardener'], shop:['garden_centre']}},
+  cleaning:{sector:'home', prime:true, label:'Laundry & cleaning',
+    tags:{shop:['laundry','dry_cleaning']}},
+
+  autorepair:{sector:'motor', prime:true, label:'Garages, MOT & tyres',
+    tags:{shop:['car_repair','motorcycle_repair','tyres'], amenity:['car_wash'], craft:['car_painter']}},
+  driving:{sector:'motor', prime:true, label:'Driving schools',
+    tags:{amenity:['driving_school']}},
+  motors:{sector:'motor', prime:false, label:'Car & bike dealers',
+    tags:{shop:['car','car_parts','motorcycle','caravan']}},
+
+  petcare:{sector:'pet', prime:true, label:'Groomers, vets & boarding',
+    tags:{shop:['pet_grooming'], amenity:['veterinary','animal_boarding']}},
+  petshop:{sector:'pet', prime:false, label:'Pet shops',
+    tags:{shop:['pet']}},
+
+  finance:{sector:'pro', prime:true, label:'Accountants & financial advisers',
+    tags:{office:['accountant','tax_advisor','financial_advisor','financial','insurance','bookkeeper']}},
+  legal:{sector:'pro', prime:true, label:'Solicitors & legal',
+    tags:{office:['lawyer','notary']}},
+  property:{sector:'pro', prime:true, label:'Estate agents, architects & surveyors',
+    tags:{office:['estate_agent','property_management','surveyor','architect','engineer','construction_company']}},
+  business:{sector:'pro', prime:true, label:'Consultants, agencies & IT',
+    tags:{office:['consulting','advertising_agency','graphic_design','marketing','web_design','it','employment_agency','travel_agent','translator'], shop:['travel_agency']}},
+  funeral:{sector:'pro', prime:true, label:'Funeral directors',
+    tags:{shop:['funeral_directors'], amenity:['funeral_hall']}},
+
+  photo:{sector:'creative', prime:true, label:'Photographers',
+    tags:{craft:['photographer','photographic_laboratory'], shop:['photo']}},
+  print:{sector:'creative', prime:true, label:'Printers & signmakers',
+    tags:{craft:['printer','sign_maker','engraver','bookbinder'], shop:['copyshop']}},
+  makers:{sector:'creative', prime:true, label:'Makers & craft workshops',
+    tags:{craft:['jeweller','goldsmith','watchmaker','clockmaker','upholsterer','shoemaker','tailor','dressmaker','furniture','pottery','glassblower','basket_maker','candlemaker','leather','saddler','handicraft','restoration','picture_framer','musical_instrument','sculptor'], shop:['tailor','sewing']}},
+
+  childcare:{sector:'learn', prime:true, label:'Nurseries & childcare',
+    tags:{amenity:['childcare','kindergarten']}},
+  tuition:{sector:'learn', prime:true, label:'Tutors, music & dance schools',
+    tags:{amenity:['music_school','language_school','dancing_school','training','prep_school'], leisure:['dance'], office:['educational_institution','tutoring']}},
+
+  retail:{sector:'shops', prime:false, label:'Independent retail',
+    tags:{shop:RETAIL_SHOPS}}
+};
+
+// Derived once from BUCKETS: the label lookup, the prime lookup, and the reverse
+// tag index the classifier reads. Because that index is built from the very same
+// tag lists the Overpass query is built from, a result can never come back in a
+// category the app then fails to name.
+const TYPE_LABELS = {};
+const PRIME = {};
+const TAG_INDEX = {};
+for(const k in BUCKETS){
+  const b=BUCKETS[k];
+  TYPE_LABELS[k]=b.label;
+  PRIME[k]=!!b.prime;
+  for(const key in (b.tags||{})){
+    b.tags[key].forEach(v=>{
+      const idx=key+'='+v;
+      if(!(idx in TAG_INDEX)) TAG_INDEX[idx]=k;   // first bucket to claim a tag owns it
+    });
+  }
+}
+function filtersOf(k){
+  const b=BUCKETS[k]; if(!b) return [];
+  let f=[];
+  for(const key in (b.tags||{})) b.tags[key].forEach(v=>f.push(`["${key}"="${v}"]`));
+  return f.concat(b.extra||[]);
+}
+
+// The cases an exact tag lookup can't settle, in priority order. OSM floods
+// shop=beauty with nail bars, brow and lash studios and tanning salons, and small
+// clinics carry their speciality in a free-text healthcare:speciality string — so
+// these run BEFORE the index and win over it.
+const PRE_MATCH = [
+  t=>/nail|manicure|pedicure|eyebrow|\bbrow|lash|eyelash|tanning|\btan\b|waxing|hair_removal|threading/.test((t.beauty||'').toLowerCase()) ? 'hairnails' : null,
+  t=>/yoga|pilates/.test((t.sport||'').toLowerCase()) ? 'fitness' : null,
+  t=>{
+    const s=(t['healthcare:speciality']||'').toLowerCase(); if(!s) return null;
+    if(/acupunctur|reflexolog|homeopath|naturopath|herbal|ayurved|reiki|hypno/.test(s)) return 'alternative';
+    if(/physiotherapy|chiropractic|osteopath|podiatry|chiropody/.test(s)) return 'physio';
+    if(/psychotherapy|counselling|psychology/.test(s)) return 'therapy';
+    if(/massage/.test(s)) return 'massage';
+    return null;
+  },
+  t=>{ const b=(t.beauty||'').toLowerCase(); return (b.includes('massage')||b.includes('spa')) ? 'massage' : null; }
+];
+// Last resorts, after the index has had its go.
+const POST_MATCH = [
+  t=>t.beauty ? 'beauty' : null,
+  // Generic healthcare=clinic/yes matched purely on its name (see CLINIC above) —
+  // bucket it from the name so it still shows a sensible type label.
+  t=>{
+    if(!t.healthcare) return null;
     const n=(t.name||'').toLowerCase();
     if(/acupunctur|reflexolog|homeopath|naturopath|holistic|reiki|hypno/.test(n)) return 'alternative';
     if(/physio|chiro|osteo|podiat|chiropod|sports injur/.test(n)) return 'physio';
     if(/therap|counsell|psycholog|mental health|wellbeing/.test(n)) return 'therapy';
     if(/massage|bodywork|sauna/.test(n)) return 'massage';
+    return null;
   }
+];
+// Checked in this order so a business carrying two of them (a hairdresser inside
+// a leisure centre, say) is filed under the more specific trade.
+const CLASSIFY_KEYS = ['healthcare','shop','craft','office','leisure','amenity','sport'];
+// Classifies a raw OSM tag set into one of the app's own category buckets, so a
+// result always shows a business "type" in the same language as the Category
+// dropdown rather than a raw (and often blank) OSM tag value.
+function bucketOf(t){
+  for(const m of PRE_MATCH){ const b=m(t); if(b) return b; }
+  for(const key of CLASSIFY_KEYS){
+    const v=(t[key]||'').toLowerCase();
+    if(v && TAG_INDEX[key+'='+v]) return TAG_INDEX[key+'='+v];
+  }
+  for(const m of POST_MATCH){ const b=m(t); if(b) return b; }
   return null;
 }
+function isPrime(t){ const b=bucketOf(t); return !!(b && PRIME[b]); }
 function typeLabelOf(t){
   const b=bucketOf(t);
   if(b) return TYPE_LABELS[b];
   const raw=catLabelOf(t);
   return raw || '';
 }
-function selectedFilters(catKey){
-  if(catKey==='all'){
-    let f=[]; for(const k in CATEGORIES){ if(CATEGORIES[k].core) f=f.concat(CATEGORIES[k].filters); }
-    return f;
-  }
-  return CATEGORIES[catKey] ? CATEGORIES[catKey].filters : [];
+// A Category value is 'all' (every bucket), 'sec:<sector>' or a bare bucket key.
+function bucketsFor(catKey){
+  if(catKey==='all') return Object.keys(BUCKETS);
+  if(catKey.slice(0,4)==='sec:'){ const s=catKey.slice(4); return Object.keys(BUCKETS).filter(k=>BUCKETS[k].sector===s); }
+  return BUCKETS[catKey] ? [catKey] : [];
 }
-function isCore(catKey){ return catKey==='all' || (CATEGORIES[catKey] && CATEGORIES[catKey].core); }
+function selectedFilters(catKey){
+  let f=[];
+  bucketsFor(catKey).forEach(k=>{ f=f.concat(filtersOf(k)); });
+  return f;
+}
+// Both category pickers are built from BUCKETS, so adding a bucket above puts it
+// in the search dropdown and the manual-add Type list without writing it twice.
+function bucketsInSector(s){ return Object.keys(BUCKETS).filter(k=>BUCKETS[k].sector===s); }
+function buildCategoryMenus(){
+  const cat=el('cat');
+  if(cat){
+    let h='<option value="all">All business types</option>';
+    for(const s in SECTORS){
+      const keys=bucketsInSector(s);
+      if(!keys.length) continue;
+      h+=`<optgroup label="${esc(SECTORS[s].label)}">`;
+      // A one-bucket sector needs no "All …" option — it would only repeat it.
+      if(keys.length>1) h+=`<option value="sec:${s}">All ${esc(SECTORS[s].label.toLowerCase())}</option>`;
+      keys.forEach(k=>{ h+=`<option value="${k}">${esc(BUCKETS[k].label)}</option>`; });
+      h+='</optgroup>';
+    }
+    cat.innerHTML=h;
+    cat.value='sec:wellness';
+  }
+  const m=el('m-cat');
+  if(m){
+    let h='';
+    for(const s in SECTORS){
+      const keys=bucketsInSector(s);
+      if(!keys.length) continue;
+      h+=`<optgroup label="${esc(SECTORS[s].label)}">`;
+      keys.forEach(k=>{ h+=`<option value="${k}">${esc(BUCKETS[k].label)}</option>`; });
+      h+='</optgroup>';
+    }
+    h+='<option value="">Other</option>';
+    m.innerHTML=h;
+  }
+}
 
 /* ---------- geocode ---------- */
 async function geocode(q){
@@ -1130,15 +1269,28 @@ async function geocode(q){
 
 /* ---------- overpass ---------- */
 const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
-// Overpass stops emitting once it has produced this many elements. The old value
-// of 500 was reached by a 20 km search in any city, and the app then presented the
-// truncated list as if it were the whole picture. Hitting it is now reported —
+// Overpass stops emitting once one request has produced this many elements, and
+// it fills that budget with nodes before it ever reaches ways. Measured on a 40 km
+// "All business types" search over west Cornwall: 2799 objects matched, the single
+// request came back pinned to 2000, and those 2000 were all 1834 nodes plus just
+// 166 of the 960 ways — every remaining building-mapped business was dropped
+// before the app saw it. So the cap is now per CHUNK (see buildQueries): each
+// request carries a slice of the statements, keeping every chunk far below the
+// budget instead of one big union starving itself. Hitting it is still reported —
 // see the "capped" note in renderResults.
 const RESULT_CAP=2000;
-// "All wellness" concatenates five categories that share several filters (spa,
-// and the clinic rescue appears in four of them), so the same statement was being
-// sent to Overpass up to four times. Deduping is a free saving; merging further
-// is not, for the indexing reason described above CATEGORIES.
+// Statements per request. The full bucket set is ~206 statements; as one union
+// that measured ~46s and was fragile on the public endpoint (repeated 504s and
+// 429s under load). At 40 per request each chunk returned in 8–13s, is cheap to
+// retry, and a chunk that dies takes only its own categories down with it.
+const CHUNK_STATEMENTS=40;
+// overpass-api.de allots roughly two slots per client; asking for more earns 429s
+// that would cost more time than the parallelism saves.
+const CHUNK_CONCURRENCY=2;
+// Any "All …" pick concatenates buckets that share filters — the clinic rescue
+// appears in four wellness buckets, spa in two — so the same statement was being
+// sent to Overpass several times over. Deduping is a free saving; merging further
+// is not, for the indexing reason described above BUCKETS.
 function mergeFilters(filters){
   return Array.from(new Set(filters));
 }
@@ -1154,22 +1306,28 @@ function bboxAround(lat, lon, rad){
   const dLon = pad*rad/(111320*Math.max(0.01, Math.cos(lat*Math.PI/180)));
   return { s:lat-dLat, w:lon-dLon, n:lat+dLat, e:lon+dLon };
 }
-function buildQuery(filters, kw, lat, lon, rad){
+// Splits the search into several small Overpass requests rather than one union.
+function buildQueries(filters, kw, lat, lon, rad){
   // A per-statement (around:...) makes Overpass re-evaluate the radius for every
-  // one of the ~30 statements, which timed the query out well before it returned.
-  // A single [bbox:...] in the header is served straight from the primary spatial
-  // index and is applied once for the whole union. The box is bigger than the
-  // circle, so results outside the real radius are trimmed off in runSearch.
+  // statement, which timed the query out well before it returned. A single
+  // [bbox:...] in the header is served straight from the primary spatial index and
+  // is applied once per request. The box is bigger than the circle, so results
+  // outside the real radius are trimmed off in runSearch.
   const b = bboxAround(lat, lon, Number(rad)||5000);
+  const head = `[out:json][timeout:90][bbox:${b.s.toFixed(6)},${b.w.toFixed(6)},${b.n.toFixed(6)},${b.e.toFixed(6)}];`;
   let parts=[];
   mergeFilters(filters).forEach(f=>parts.push(`nwr${f};`));
   if(kw && kw.trim()){
     const k=kw.trim().replace(/[\\"]/g,'');
-    ['shop','healthcare','office','amenity','leisure'].forEach(base=>{
+    ['shop','healthcare','office','amenity','leisure','craft'].forEach(base=>{
       parts.push(`nwr["${base}"]["name"~"${k}",i];`);
     });
   }
-  return `[out:json][timeout:90][bbox:${b.s.toFixed(6)},${b.w.toFixed(6)},${b.n.toFixed(6)},${b.e.toFixed(6)}];(${parts.join('')});out center tags ${RESULT_CAP};`;
+  const queries=[];
+  for(let i=0;i<parts.length;i+=CHUNK_STATEMENTS){
+    queries.push(head+'('+parts.slice(i,i+CHUNK_STATEMENTS).join('')+`);out center tags ${RESULT_CAP};`);
+  }
+  return queries;
 }
 // Great-circle metres — the bbox above over-selects at the corners, so results
 // are trimmed back to the radius the user actually chose.
@@ -1191,6 +1349,50 @@ async function overpass(query){
   }
   throw lastErr||new Error('overpass failed');
 }
+// Runs the chunks a couple at a time and merges them. A chunk that fails on every
+// endpoint doesn't sink the whole search — the categories it covered are simply
+// missing, and the count comes back so the results can say so. That matters more
+// than it sounds: the public endpoint really does hand out 504s and 429s under
+// load, and a silently short result set is indistinguishable from a quiet town.
+// Duplicates across chunks are expected (one business can match statements in two
+// of them) and are removed by the seenIds pass in runSearch.
+async function overpassChunks(queries, onProgress){
+  const elements=[];
+  let done=0, capped=false, lastErr=null;
+  // Runs a list of chunks CHUNK_CONCURRENCY at a time; hands back the ones that
+  // failed every endpoint so the caller can decide whether to try again.
+  async function pass(list){
+    const failed=[]; let next=0;
+    async function worker(){
+      while(next<list.length){
+        const q=list[next++];
+        try{
+          const els=await overpass(q);
+          if(els.length>=RESULT_CAP) capped=true;
+          for(const e of els) elements.push(e);
+          if(onProgress) onProgress(++done, queries.length);
+        }catch(e){ lastErr=e; failed.push(q); }
+      }
+    }
+    const workers=[];
+    for(let i=0;i<Math.min(CHUNK_CONCURRENCY, list.length);i++) workers.push(worker());
+    await Promise.all(workers);
+    return failed;
+  }
+  let failed=await pass(queries);
+  // 429s and 504s from the public endpoints are usually momentary, and firing
+  // several requests in quick succession is exactly the pattern that provokes
+  // them. One retry after a pause recovers most of it; whatever still fails is
+  // reported rather than hidden.
+  if(failed.length){
+    await new Promise(r=>setTimeout(r, 2500));
+    failed=await pass(failed);
+  }
+  // Every chunk failing means the service is down or we're blocked, not that the
+  // area is empty — that has to surface as an error, not as "no prospects here".
+  if(failed.length===queries.length) throw lastErr||new Error('overpass failed');
+  return { elements, failed:failed.length, capped };
+}
 
 /* ---------- result normalisation ---------- */
 function websiteOf(t){ return t.website||t['contact:website']||t.url||t['contact:url']||''; }
@@ -1203,6 +1405,7 @@ function addressOf(t){ return [streetOf(t), areaOf(t), t['addr:postcode']].filte
 function catLabelOf(t){
   if(t.healthcare) return (t['healthcare:speciality']||t.healthcare).replace(/_/g,' ');
   if(t.shop) return t.shop.replace(/_/g,' ');
+  if(t.craft) return t.craft.replace(/_/g,' ');
   if(t.leisure) return t.leisure.replace(/_/g,' ');
   if(t.office) return t.office.replace(/_/g,' ');
   if(t.amenity) return t.amenity.replace(/_/g,' ');
@@ -1230,11 +1433,19 @@ async function runSearch(){
   try{
     const geo=await geocode(q);
     if(!geo){ el('find-msg').innerHTML='<div class="empty"><div class="big">Couldn’t find that place</div>Try a nearby town name or a full postcode.</div>'; finish(); return; }
-    el('search-status').innerHTML='<span class="spinner"></span>Searching businesses near '+esc(geo.name.split(',')[0])+'…';
     const catKey=el('cat').value;
+    // A sweep of every bucket is ~200 Overpass statements and measured around 35s
+    // on a 5 km search, so say so — otherwise a bare spinner for that long reads
+    // as a hung app and gets cancelled a few seconds before the results land.
+    const town=esc(geo.name.split(',')[0]);
     const filters=selectedFilters(catKey);
-    const query=buildQuery(filters, el('kw').value, geo.lat, geo.lon, el('rad').value);
-    const elements=await overpass(query);
+    const queries=buildQueries(filters, el('kw').value, geo.lat, geo.lon, el('rad').value);
+    // Real progress rather than an open-ended spinner: a broad search is several
+    // requests and can run near a minute, which reads as a hung app otherwise.
+    const status=(d,t)=>{ el('search-status').innerHTML='<span class="spinner"></span>Searching businesses near '+town+'… <span class="mono">'+d+'/'+t+'</span>'; };
+    status(0, queries.length);
+    const batch=await overpassChunks(queries, status);
+    const elements=batch.elements;
 
     // normalise + dedupe within results
     const radM=Number(el('rad').value)||5000;
@@ -1247,11 +1458,12 @@ async function runSearch(){
       // The query used a bounding box for speed, so drop the corners that fall
       // outside the circle the user actually asked for.
       if(lat && lon && distanceMetres(geo.lat, geo.lon, lat, lon) > radM) continue;
-      // Score "core" per business from its own category, not once for the whole
-      // search — otherwise a nail bar and an osteopath get the same bonus and
-      // sort identically. This is what pushes real wellness to the top.
+      // Score the fit bonus per business from its own category, not once for the
+      // whole search — otherwise a leisure-centre gym and a one-room osteopath get
+      // the same bonus and sort identically. This is what pushes the businesses
+      // actually worth a demo to the top of a broad, mixed search.
       const rec={ id, name:e.tags.name, website:websiteOf(e.tags), phone:phoneOf(e.tags),
-        area:areaOf(e.tags), addr:addressOf(e.tags), cat:typeLabelOf(e.tags), lat, lon, core:isWellness(e.tags) };
+        area:areaOf(e.tags), addr:addressOf(e.tags), cat:typeLabelOf(e.tags), lat, lon, core:isPrime(e.tags) };
       raw.push(rec);
     }
 
@@ -1269,7 +1481,7 @@ async function runSearch(){
 
     const shownWithSite=fresh.filter(r=>r.website).length;
     renderResults(fresh, {total:raw.length, already:alreadyCount, siteFiltered, siteMode, shownWithSite,
-                          capped: elements.length >= RESULT_CAP});
+                          capped: batch.capped, failedChunks: batch.failed, chunks: queries.length});
 
     // Map view: plot the fresh results, then honour the chosen Map/List view.
     lastGeo={ lat:geo.lat, lon:geo.lon, name:geo.name }; lastRad=el('rad').value;
@@ -1295,10 +1507,20 @@ let lastGeo=null, lastRad=null;
 // otherwise a truncated search looks identical to a complete one, and you'd never
 // know a chunk of the area was missing.
 function capNote(meta){
-  if(!meta.capped) return '';
-  return `<div class="msg" style="margin-top:4px"><b>This area has more than we can list at once.</b>
-    OpenStreetMap stopped at ${RESULT_CAP} results, so this is a partial picture —
-    narrow the <b>Search radius</b>, or run one <b>Category</b> at a time, to see the rest.</div>`;
+  let out='';
+  if(meta.capped){
+    out+=`<div class="msg" style="margin-top:4px"><b>This area has more than we can list at once.</b>
+      One slice of the search stopped at ${RESULT_CAP} results, so this is a partial picture —
+      narrow the <b>Search radius</b>, or run one <b>Category</b> at a time, to see the rest.</div>`;
+  }
+  // A dropped chunk means whole categories are missing from this map, which is
+  // invisible otherwise — it just looks like a town with no plumbers in it.
+  if(meta.failedChunks){
+    out+=`<div class="msg" style="margin-top:4px"><b>${meta.failedChunks} of ${meta.chunks} parts of this search didn’t come back.</b>
+      OpenStreetMap was busy, so some categories are missing from these results.
+      Run the search again to fill in the gaps.</div>`;
+  }
+  return out;
 }
 function renderResults(list, meta){
   lastResults=list;
@@ -1312,7 +1534,7 @@ function renderResults(list, meta){
   if(bits.length) note=`<span class="hidden-note">Skipped ${bits.join(' and ')}.</span>`;
 
   if(!list.length){
-    el('find-msg').innerHTML=`<div class="msg"><b>No fresh prospects here.</b> ${note}</div>${capNote(meta)}<div class="empty">${meta.total? 'Everything nearby is either already on your list or filtered out by your Website choice.':'Nothing matched in this area — try a wider radius or “All wellness”.'}</div>`;
+    el('find-msg').innerHTML=`<div class="msg"><b>No fresh prospects here.</b> ${note}</div>${capNote(meta)}<div class="empty">${meta.total? 'Everything nearby is either already on your list or filtered out by your Website choice.':'Nothing matched in this area — try a wider radius, a broader “All …” category, or “All business types”.'}</div>`;
     el('results').innerHTML=''; return;
   }
   const siteNote = (meta.siteMode==='all' && meta.shownWithSite)
@@ -1332,7 +1554,7 @@ let mapPlot=[];            // the records currently plotted, redrawn on every zo
 let resultView='map';      // 'map' | 'list'
 const hasMap = ()=> typeof L!=='undefined';
 
-// Green = strong fit (usually a no-website wellness practice), amber = medium,
+// Green = strong fit (usually a no-website owner-run business), amber = medium,
 // grey = weaker — so the best prospects stand out on the map at a glance.
 function markerColor(score){
   if(score>=70) return '#3F8F5E';
@@ -1711,11 +1933,14 @@ async function addManual(){
   const name=el('m-name').value.trim();
   const msg=el('manual-msg');
   if(!name){ el('m-name').focus(); if(msg){ msg.style.color='#c0392b'; msg.textContent='Enter a business name.'; } return; }
-  const catLabel=el('m-cat').value;
-  const wellness=!(catLabel==='Hair & nails' || catLabel==='Other'); // ranks real wellness above grooming
+  // The Type dropdown holds bucket keys, so the fit bonus comes from the same
+  // `prime` flag a searched result would have got — an entered plumber and a
+  // found plumber score identically.
+  const bkey=el('m-cat').value;
+  const catLabel=TYPE_LABELS[bkey] || 'Other';
   const id='manual/'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
   store[id]={ id, name, website:el('m-web').value.trim(), phone:el('m-phone').value.trim(),
-    area:el('m-area').value.trim(), cat:catLabel, lat:null, lon:null, core:wellness,
+    area:el('m-area').value.trim(), cat:catLabel, lat:null, lon:null, core:!!PRIME[bkey],
     status:'new', notes:el('m-notes').value.trim(), message:'', social:'',
     addedAt:Date.now(), lastContactedAt:null, updatedAt:nowStamp() };
   await saveStore();
@@ -2141,8 +2366,15 @@ function showTab(t){
   loadVisited();              // which map pins you've already opened (device-local)
   loadColOrder();
   try{ const v=localStorage.getItem(MAPVIEW_KEY); if(v==='map'||v==='list') resultView=v; }catch(e){}
+  buildCategoryMenus();       // must precede the settings restore below — it sets el('cat').value
   const s=await loadSettings();
-  if(s){ el('loc').value=s.loc||''; if(s.cat)el('cat').value=s.cat; if(s.rad)el('rad').value=s.rad; }
+  if(s){
+    el('loc').value=s.loc||'';
+    // A category saved by an older build may no longer exist; assigning an unknown
+    // value to a <select> leaves it blank, so fall back rather than search nothing.
+    if(s.cat){ el('cat').value=s.cat; if(!el('cat').value) el('cat').value='sec:wellness'; }
+    if(s.rad)el('rad').value=s.rad;
+  }
   if(el('sitefilter')) el('sitefilter').value='none'; // always start protective — see saveSettings note
   renderAccountBar();
   updateSaveIndicator(false); // show current state immediately, so an unexpected 0 is visible right away
