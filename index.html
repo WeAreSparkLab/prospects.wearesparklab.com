@@ -140,8 +140,11 @@
   .toggle{display:flex;align-items:center;gap:10px;margin-top:16px;cursor:pointer;user-select:none;font-size:14px;color:var(--ink-soft);}
   .toggle input{width:18px;height:18px;accent-color:var(--teal);cursor:pointer;}
   .actions{display:flex;gap:10px;align-items:center;margin-top:18px;flex-wrap:wrap;}
-  button.primary{font-family:'Space Grotesk';font-weight:600;font-size:15px;color:#fff;background:var(--ink);border:none;border-radius:10px;padding:12px 22px;cursor:pointer;transition:background .15s,transform .05s;}
-  button.primary:hover{background:#0F1B1E;}
+  /* --ink is a text colour that flips to near-white in dark mode, so it can't
+     double as a solid button background — use the brand teal instead, which
+     stays a real colour (not text-on-background) in both themes. */
+  button.primary{font-family:'Space Grotesk';font-weight:600;font-size:15px;color:#fff;background:var(--teal);border:none;border-radius:10px;padding:12px 22px;cursor:pointer;transition:filter .15s,transform .05s;}
+  button.primary:hover{filter:brightness(.92);}
   button.primary:active{transform:translateY(1px);}
   button.primary:disabled{opacity:.5;cursor:default;}
   button.ghost{font-family:'Inter';font-weight:500;font-size:14px;color:var(--ink-soft);background:none;border:1px solid var(--line);border-radius:10px;padding:11px 16px;cursor:pointer;}
