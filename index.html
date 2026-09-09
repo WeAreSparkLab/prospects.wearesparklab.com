@@ -216,9 +216,10 @@
   .col-area{width:120px;}
   .col-cat{width:110px;}
   .col-status{width:150px;}
-  .col-website{width:90px;}
+  .col-website{width:150px;}
+  .website-wrap{display:flex;align-items:center;gap:6px;}
   .col-phone{width:140px;}
-  .col-social{width:200px;}
+  .col-social{width:226px;}
   .col-score{width:56px;text-align:center;}
   .col-lastContactedAt{width:150px;}
   .col-addedAt{width:100px;}
@@ -253,6 +254,14 @@
   .table-notes-in:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
   .table-message-in{font-family:'Inter';font-size:12.5px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);border-radius:7px;padding:6px 8px;width:100%;white-space:normal;resize:vertical;min-height:40px;line-height:1.45;}
   .table-message-in:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+  .col-message-wrap{display:flex;gap:6px;align-items:flex-start;}
+  .col-message-wrap textarea{flex:1;min-width:0;}
+  .icon-mini-btn{flex-shrink:0;width:28px;height:28px;border-radius:7px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;text-decoration:none;}
+  .icon-mini-btn:hover{border-color:var(--teal);color:var(--teal);}
+  .icon-mini-btn.copied{border-color:var(--teal);color:var(--teal);background:var(--teal-soft);}
+  .icon-mini-btn[aria-disabled="true"]{opacity:.4;cursor:default;pointer-events:none;}
+  .social-wrap{display:flex;gap:6px;align-items:center;}
+  .social-wrap input{flex:1;min-width:0;}
   .table-link{color:var(--teal);text-decoration:none;font-weight:500;margin-right:8px;}
   .table-link:hover{border-bottom:1px solid var(--teal);}
   .table-remove{font-family:'Inter';font-size:12px;font-weight:500;border-radius:7px;padding:4px 9px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);}
@@ -2017,6 +2026,44 @@ async function setNote(id, val){ if(rec(id)){ store[id].notes=val; touch(id); aw
 async function setMessage(id, val){ if(rec(id)){ store[id].message=val; touch(id); await saveStore(); } }
 async function setPhone(id, val){ if(rec(id)){ store[id].phone=val.trim(); touch(id); await saveStore(); refreshStats(); } }
 async function setSocial(id, val){ if(rec(id)){ store[id].social=val.trim(); touch(id); await saveStore(); } }
+
+// Copy a "First message" textarea's current text to the clipboard. Reads the
+// live textarea value (not the store) so it works mid-edit, before blur has
+// even saved the draft.
+async function copyMessageFromTextarea(btn){
+  const ta=btn.previousElementSibling;
+  const text=(ta && ta.value || '').trim();
+  if(!text) return;
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    // Clipboard API can be unavailable (older browser, non-https); fall back
+    // to the classic select+execCommand trick.
+    ta.select();
+    try{ document.execCommand('copy'); }catch(_){}
+  }
+  const orig=btn.textContent;
+  btn.textContent='✓';
+  btn.classList.add('copied');
+  setTimeout(()=>{ btn.textContent=orig; btn.classList.remove('copied'); }, 1200);
+}
+
+// Turn a saved "@handle or link" into a URL to open. A bare handle (no dot,
+// no scheme) is assumed to be Instagram, since that's what most of these
+// small local businesses actually use.
+function socialUrl(social){
+  const s=(social||'').trim();
+  if(!s) return '';
+  if(/^https?:\/\//i.test(s)) return s;
+  if(s.includes('.')) return 'https://'+s.replace(/^\/+/,'');
+  return 'https://instagram.com/'+s.replace(/^@/,'');
+}
+function openSocialFromInput(btn){
+  const input=btn.previousElementSibling;
+  const url=socialUrl(input && input.value);
+  if(!url){ input && input.focus(); return; }
+  window.open(url, '_blank', 'noopener');
+}
 // Leave a tombstone rather than deleting the key: a plain delete was simply
 // refilled from the cloud on the next sync, so removals never stuck.
 async function removeOne(id){
@@ -2030,6 +2077,17 @@ function appendTag(id, tag){
   const sep=(ta.value && !ta.value.endsWith(' ') && ta.value!=='') ? ' ' : '';
   ta.value=ta.value+sep+tag;
   if(rec(id)){ store[id].notes=ta.value; touch(id); saveStore(); }
+}
+// Same "quick tag into notes" idea as appendTag, but for the table view's
+// Website column, whose Notes cell is a plain input (no data-rid textarea
+// to grab), so it writes straight to the store and re-renders instead.
+async function tagWeakWebsite(id){
+  const r=rec(id); if(!r) return;
+  const cur=r.notes||'';
+  const sep=(cur && !cur.endsWith(' ')) ? ' ' : '';
+  store[id].notes=cur+sep+'Weak website';
+  touch(id); await saveStore();
+  renderTable();
 }
 
 function renderList(){
@@ -2108,12 +2166,13 @@ const TABLE_COLS=[
   {key:'website', label:'Website', get:r=>r.website?1:0,
     cell:r=>{
       const websiteUrl=r.website && /^https?:/.test(r.website) ? r.website : (r.website? 'http://'+r.website : '');
-      return `<td class="col-website">${websiteUrl? `<a class="table-link" href="${esc(websiteUrl)}" target="_blank" rel="noopener">Site ↗</a>` : '<span class="chip nosite">no site</span>'}</td>`;
+      const link=websiteUrl? `<a class="table-link" href="${esc(websiteUrl)}" target="_blank" rel="noopener">Site ↗</a>` : '<span class="chip nosite">no site</span>';
+      return `<td class="col-website"><div class="website-wrap">${link}<button type="button" class="tag-btn" onclick="tagWeakWebsite('${r.id}')" title="Note this as a weak website">+ Weak</button></div></td>`;
     }},
   {key:'phone', label:'Phone', get:r=>r.phone||'',
     cell:r=>`<td class="col-phone"><input type="tel" class="table-notes-in" value="${esc(r.phone||'')}" placeholder="Phone…" onchange="setPhone('${r.id}', this.value)"></td>`},
   {key:'social', label:'Social', get:r=>r.social||'',
-    cell:r=>`<td class="col-social"><input type="text" class="table-notes-in" value="${esc(r.social||'')}" placeholder="@handle or link…" onchange="setSocial('${r.id}', this.value)"></td>`},
+    cell:r=>`<td class="col-social"><div class="social-wrap"><input type="text" class="table-notes-in" value="${esc(r.social||'')}" placeholder="@handle or link…" onchange="setSocial('${r.id}', this.value)"><button type="button" class="icon-mini-btn" onclick="openSocialFromInput(this)" title="Open social link">↗</button></div></td>`},
   {key:'score', label:'Fit', get:r=>scoreOf(r,r.core),
     cell:r=>`<td class="col-score">${scoreOf(r,r.core)}</td>`},
   {key:'lastContactedAt', label:'Last contacted', get:r=>r.lastContactedAt||0,
@@ -2126,7 +2185,7 @@ const TABLE_COLS=[
   {key:'notes', label:'Notes', get:r=>r.notes||'',
     cell:r=>`<td class="col-notes"><input type="text" class="table-notes-in" value="${esc(r.notes||'')}" onchange="setNote('${r.id}', this.value)"></td>`},
   {key:'message', label:'First message', get:r=>r.message||'',
-    cell:r=>`<td class="col-message"><textarea class="table-message-in" placeholder="First message…" oninput="setMessage('${r.id}', this.value)">${esc(r.message||'')}</textarea></td>`},
+    cell:r=>`<td class="col-message"><div class="col-message-wrap"><textarea class="table-message-in" placeholder="First message…" oninput="setMessage('${r.id}', this.value)">${esc(r.message||'')}</textarea><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy message">⧉</button></div></td>`},
   {key:'links', label:'Links', sort:false, get:r=>'',
     cell:r=>`<td class="col-links"><a class="table-link" href="${mapsLink(r.name,r.addr||r.area,r.lat,r.lon)}" target="_blank" rel="noopener">Maps ↗</a><button class="table-remove" onclick="removeOne('${r.id}')">Remove</button></td>`}
 ];
