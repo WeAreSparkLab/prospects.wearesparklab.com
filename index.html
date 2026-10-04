@@ -199,6 +199,26 @@
   .tag-btn{font-family:'Inter';font-size:11.5px;font-weight:500;padding:3px 9px;border-radius:20px;border:1px solid var(--line);background:var(--paper-2);color:var(--ink-soft);cursor:pointer;}
   .tag-btn:hover{border-color:var(--ink-faint);color:var(--ink);}
 
+  /* Review box + outreach kit (agent <-> Sara loop) */
+  .review-box,.kit{width:100%;margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--paper);}
+  .review-box{border-color:var(--spark);background:rgba(232,163,61,.09);}
+  .box-title{font-size:11px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:var(--ink-faint);margin-bottom:6px;}
+  .review-box .box-title{color:var(--spark-deep);}
+  .review-why{font-size:13px;color:var(--ink-soft);line-height:1.5;white-space:pre-wrap;word-break:break-word;}
+  .kit-row{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin-top:8px;font-size:13px;}
+  .kit-row a{color:var(--teal);text-decoration:none;font-weight:500;}
+  .kit-row a:hover{text-decoration:underline;}
+  .kit-lab{display:block;margin-top:10px;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;}
+  .kit-wrap{display:flex;gap:6px;align-items:flex-start;margin-top:4px;}
+  .kit-wrap>input,.kit-wrap>textarea,input.kit-in,textarea.kit-in{flex:1;min-width:0;width:100%;font-family:'Inter';font-size:13px;color:var(--ink-soft);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;line-height:1.45;}
+  .kit-wrap>textarea,textarea.kit-in{resize:vertical;min-height:84px;}
+  .kit-wrap>input:focus,.kit-wrap>textarea:focus,input.kit-in:focus,textarea.kit-in:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+  .kit-btn{font-family:'Inter';font-weight:500;font-size:13px;border-radius:8px;padding:7px 12px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);white-space:nowrap;}
+  .kit-btn:hover{border-color:var(--ink-faint);color:var(--ink);}
+  .kit-btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
+  .kit-btn.primary:hover{background:#255955;color:#fff;}
+  .src-note{font-size:11.5px;color:var(--ink-faint);}
+
   /* table view */
   .table-scroll{overflow:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 190px);background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);}
   /* keep the horizontal scrollbar always visible so it's obvious the table scrolls sideways */
@@ -228,6 +248,8 @@
   .col-addedAt{width:100px;}
   .col-notes{width:230px;}
   .col-message{width:320px;}
+  .col-email{width:210px;}
+  .col-emailDraft{width:340px;}
   .col-links{width:150px;}
   .td-name{font-family:'Space Grotesk';font-weight:600;color:var(--ink);white-space:normal;background:var(--card);}
   table.data-table tbody tr:hover .td-name{background:var(--paper-2);}
@@ -383,6 +405,10 @@
         </div>
       </div>
       <div style="margin-top:2px;">
+        <label class="f" for="m-email">Email</label>
+        <input type="text" id="m-email" placeholder="optional — their public business email" autocomplete="off">
+      </div>
+      <div style="margin-top:10px;">
         <label class="f" for="m-web">Website</label>
         <input type="text" id="m-web" placeholder="optional — leave blank if they have none" autocomplete="off">
       </div>
@@ -411,6 +437,8 @@
     <div class="list-bar">
       <select id="filter-status" onchange="renderList()">
         <option value="new" selected>New / to action</option>
+        <option value="review">Needs review</option>
+        <option value="ready">Ready to send</option>
         <option value="active">Active pipeline (all live)</option>
         <option value="all">Everything</option>
         <option value="demo_built">Demo built</option>
@@ -440,6 +468,8 @@
       <input type="text" id="table-search" class="table-toolbar-search" placeholder="Search name, area, notes…" oninput="renderTable()">
       <select id="table-filter-status" onchange="renderTable()">
         <option value="active">Active pipeline</option>
+        <option value="review">Needs review</option>
+        <option value="ready">Ready to send</option>
         <option value="all">Everything</option>
         <option value="new">New / uncontacted</option>
         <option value="demo_built">Demo built</option>
@@ -488,6 +518,8 @@ const SB_SESSION_KEY = 'sb_session_v1';
 const SB_EMAIL_KEY = 'sb_email_v1';
 
 const DEAD = new Set(['has_website','said_no','dismissed','archived']);
+const REVIEW_PREFIX = 'NEEDS REVIEW:';      // the daily agent starts a note with this when it needs Sara's call
+const SEND_AS = 'sara@wearesparklab.com';    // Gmail account the "Open in Gmail" draft is addressed from
 const STATUS_LABELS = {
   new:'New', demo_built:'Demo built', message_sent:'Message sent', interested:'Interested',
   quote_sent:'Quote sent', customer:'Client',
@@ -1917,6 +1949,11 @@ function bizCard(r, mode){
   const dupeWarn = dupe ? `<div class="dupe-warn">⚠️ Already have a match: <b>${esc(dupe)}</b></div>` : '';
   const dead = mode==='list' && DEAD.has(r.status) ? ' dead':'';
   const dupeClass = dupe ? ' dupe-card' : '';
+  let extra='';
+  if(mode==='list'){
+    if(isReview(r)) extra=reviewBox(r);
+    else if(r.status==='demo_built' || r.email || r.emailBody) extra=kitBox(r);
+  }
   const score = (mode==='result'? r.score : scoreOf(r, r.core));
   return `<div class="biz${dead}${dupeClass}">
     <div class="score"><div class="v">${score}</div><div class="lab">fit</div></div>
@@ -1926,6 +1963,7 @@ function bizCard(r, mode){
       <div class="biz-links">${links.join('')}</div>
       ${dupeWarn}
       ${notes}
+      ${extra}
     </div>
     ${actions}
   </div>`;
@@ -1953,11 +1991,12 @@ async function addManual(){
     area:el('m-area').value.trim(), cat:catLabel, lat:null, lon:null, core:!!PRIME[bkey],
     status:'new', notes:el('m-notes').value.trim(), message:'', social:'',
     addedAt:Date.now(), lastContactedAt:null, updatedAt:nowStamp() };
+  if(el('m-email').value.trim()) store[id].email=el('m-email').value.trim();
   await saveStore();
   refreshStats();
   if(typeof renderList==='function') renderList();
   if(typeof renderTable==='function') renderTable();
-  ['m-name','m-area','m-phone','m-web','m-notes'].forEach(k=>{ el(k).value=''; });
+  ['m-name','m-area','m-phone','m-email','m-web','m-notes'].forEach(k=>{ el(k).value=''; });
   el('m-name').focus();
   if(msg){ msg.style.color='var(--green)'; msg.textContent='Added “'+name+'” to My list.'; setTimeout(()=>{ msg.textContent=''; msg.style.color=''; }, 4000); }
 }
@@ -2027,6 +2066,81 @@ async function setNote(id, val){ if(rec(id)){ store[id].notes=val; touch(id); aw
 async function setMessage(id, val){ if(rec(id)){ store[id].message=val; touch(id); await saveStore(); } }
 async function setPhone(id, val){ if(rec(id)){ store[id].phone=val.trim(); touch(id); await saveStore(); refreshStats(); } }
 async function setSocial(id, val){ if(rec(id)){ store[id].social=val.trim(); touch(id); await saveStore(); } }
+
+/* ---------- agent loop: review decisions + outreach kit ----------
+   The daily agent flags a business it can't settle by starting its note with
+   "NEEDS REVIEW:". Approving here strips that marker (the agent's own Mode A then
+   builds the demo) and passes along an optional instruction in `reply`.
+   email / emailSource / emailSubject / emailBody are written by the agent (or typed
+   here). Nothing is ever sent from this app: "Open in Gmail" only pre-fills a draft. */
+function isReview(r){ return !!r && r.status==='new' && (r.notes||'').trim().startsWith(REVIEW_PREFIX); }
+function reviewReason(r){ return (r.notes||'').trim().slice(REVIEW_PREFIX.length).trim(); }
+async function setEmail(id, val){ if(rec(id)){ store[id].email=val.trim(); touch(id); await saveStore(); } }
+async function setEmailSubject(id, val){ if(rec(id)){ store[id].emailSubject=val; touch(id); await saveStore(); } }
+async function setEmailBody(id, val){ if(rec(id)){ store[id].emailBody=val; touch(id); await saveStore(); } }
+async function setReply(id, val){ if(rec(id)){ store[id].reply=val; touch(id); await saveStore(); } }
+async function approveReview(id){
+  const r=rec(id); if(!r || !isReview(r)) return;
+  const box=document.querySelector(`textarea[data-reply="${id}"]`);
+  const reply=((box ? box.value : r.reply) || '').trim();
+  const why=reviewReason(r);
+  r.notes='Reviewed by Sara '+new Date().toISOString().slice(0,10)+(why ? ' — agent had flagged: '+why : '');
+  r.reply=reply;
+  touch(id); await saveStore();
+  renderList(); renderTable(); refreshStats();
+}
+function gmailLink(r){
+  const q=(k,v)=>k+'='+encodeURIComponent(v||'');
+  return 'https://mail.google.com/mail/?'+[q('authuser',SEND_AS),'view=cm','fs=1',q('to',r.email),q('su',r.emailSubject),q('body',r.emailBody)].join('&');
+}
+function mailtoLink(r){
+  return 'mailto:'+encodeURIComponent(r.email||'')+'?subject='+encodeURIComponent(r.emailSubject||'')+'&body='+encodeURIComponent(r.emailBody||'');
+}
+function openGmail(id){
+  const r=rec(id); if(!r) return;
+  if(!(r.email||'').trim()){ alert('Add an email address first.'); return; }
+  window.open(gmailLink(r), '_blank', 'noopener');
+}
+async function copyDemoLink(btn, id){
+  const r=rec(id); const url=r && r.website; if(!url) return;
+  try{ await navigator.clipboard.writeText(url); }catch(e){}
+  const orig=btn.textContent; btn.textContent='Copied ✓';
+  setTimeout(()=>{ btn.textContent=orig; }, 1200);
+}
+function reviewBox(r){
+  const id=esc(r.id);
+  return `<div class="review-box">
+    <div class="box-title">The agent needs your call</div>
+    <div class="review-why">${esc(reviewReason(r))}</div>
+    <textarea class="notes-in" data-reply="${id}" placeholder="Anything the agent should know when it builds this? (optional — e.g. “now trading as X, use that name”)" oninput="setReply('${id}', this.value)">${esc(r.reply||'')}</textarea>
+    <div class="kit-row">
+      <button class="kit-btn primary" onclick="approveReview('${id}')">Build demo</button>
+      <button class="kit-btn" onclick="setStatus('${id}','has_website')">Has website</button>
+      <button class="kit-btn" onclick="setStatus('${id}','dismissed')">Dismiss</button>
+    </div>
+  </div>`;
+}
+function kitBox(r){
+  const id=esc(r.id);
+  const demo=r.website ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">Open demo ↗</a><button class="kit-btn" onclick="copyDemoLink(this,'${id}')">Copy link</button>` : '';
+  const tel=r.phone ? `<a href="tel:${esc(r.phone.replace(/\s/g,''))}">📞 ${esc(r.phone)}</a>` : '';
+  const src=r.emailSource ? `<span class="src-note">via ${esc(r.emailSource)}</span>` : '';
+  const sent=r.status==='demo_built' ? `<button class="kit-btn primary" onclick="setStatus('${id}','message_sent')">Mark as sent</button>` : '';
+  return `<div class="kit">
+    <div class="box-title">${r.status==='demo_built' ? 'Ready to send' : 'Outreach kit'}</div>
+    <div class="kit-row">${demo}${tel}</div>
+    <label class="kit-lab">Email</label>
+    <div class="kit-wrap"><input type="text" placeholder="business email" value="${esc(r.email||'')}" oninput="setEmail('${id}', this.value)"></div>
+    ${src ? `<div class="kit-row" style="margin-top:4px;">${src}</div>` : ''}
+    <label class="kit-lab">Email draft</label>
+    <div class="kit-wrap"><input type="text" placeholder="Subject" value="${esc(r.emailSubject||'')}" oninput="setEmailSubject('${id}', this.value)"><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy subject">⧉</button></div>
+    <div class="kit-wrap"><textarea placeholder="Email body" oninput="setEmailBody('${id}', this.value)">${esc(r.emailBody||'')}</textarea><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy body">⧉</button></div>
+    <div class="kit-row"><button class="kit-btn primary" onclick="openGmail('${id}')">Open in Gmail</button><a href="#" onclick="var r=rec('${id}'); if(r && (r.email||'').trim()){ location.href=mailtoLink(r); } return false;">or mail app</a></div>
+    <label class="kit-lab">DM / first message</label>
+    <div class="kit-wrap"><textarea placeholder="First message…" oninput="setMessage('${id}', this.value)">${esc(r.message||'')}</textarea><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy message">⧉</button></div>
+    <div class="kit-row">${sent}</div>
+  </div>`;
+}
 
 // Copy a "First message" textarea's current text to the clipboard. Reads the
 // live textarea value (not the store) so it works mid-edit, before blur has
@@ -2099,6 +2213,9 @@ function renderList(){
     if(f==='all') return true;
     if(f==='active') return !DEAD.has(r.status);
     if(f==='dead') return DEAD.has(r.status);
+    if(f==='new') return r.status==='new' && !isReview(r);   // flagged entries have their own view
+    if(f==='review') return isReview(r);
+    if(f==='ready') return r.status==='demo_built';
     return r.status===f;
   });
   if(sort==='name') arr.sort((a,b)=>a.name.localeCompare(b.name));
@@ -2111,7 +2228,11 @@ function renderList(){
   const hintEl=el('list-hint');
   if(hintEl){
     hintEl.innerHTML = (f==='new')
-      ? 'Your fresh queue — new, uncontacted prospects only. The moment you set a status, a business moves out of here into the <b>Table view</b> pipeline.'
+      ? 'Your fresh queue — new, uncontacted prospects only. The agent builds a demo for each one on its next run. The moment you set a status, a business moves out of here into the <b>Table view</b> pipeline.'
+      : (f==='review')
+      ? 'Businesses the agent couldn’t settle on its own. <b>Build demo</b> sends one back to the agent (add a note if it needs one) and it is built on the next run; <b>Has website</b> and <b>Dismiss</b> close it.'
+      : (f==='ready')
+      ? 'Live demos waiting for you to send. <b>Open in Gmail</b> only pre-fills a draft — nothing is sent until you press Send there. Tap <b>Mark as sent</b> afterwards.'
       : 'Viewing your wider pipeline. Switch back to <b>New / to action</b> for just the fresh queue.';
   }
 
@@ -2120,6 +2241,10 @@ function renderList(){
     let msg;
     if(!all.length){
       msg='<div class="big">Nothing here yet</div>Run a search and add the businesses worth chasing.';
+    }else if(f==='review'){
+      msg='<div class="big">Nothing to review 🎉</div>The agent will flag anything it can’t settle here.';
+    }else if(f==='ready'){
+      msg='<div class="big">Nothing waiting to send</div>Demos the agent finishes will appear here with their email and message drafts.';
     }else if(f==='new'){
       msg = progressed
         ? `<div class="big">Queue clear 🎉</div>No new prospects to action. Your ${progressed} in-progress business${progressed>1?'es are':' is'} in the <b>Table view</b> — or run a search to add more.`
@@ -2137,7 +2262,16 @@ function renderList(){
 function refreshStats(){
   const arr=liveRecords();
   const total=arr.length;
-  const newc=arr.filter(r=>r.status==='new').length;
+  const newc=arr.filter(r=>r.status==='new' && !isReview(r)).length;
+  const revc=arr.filter(isReview).length;
+  const readyc=arr.filter(r=>r.status==='demo_built').length;
+  ['filter-status','table-filter-status'].forEach(id=>{
+    const sel=el(id); if(!sel) return;
+    Array.from(sel.options).forEach(o=>{
+      if(o.value==='review') o.textContent='Needs review'+(revc?` (${revc})`:'');
+      if(o.value==='ready') o.textContent='Ready to send'+(readyc?` (${readyc})`:'');
+    });
+  });
   const nosite=arr.filter(r=>!r.website && !DEAD.has(r.status)).length;
   const contacted=arr.filter(r=>['demo_built','message_sent','interested','quote_sent'].includes(r.status)).length;
   const cust=arr.filter(r=>r.status==='customer').length;
@@ -2148,7 +2282,7 @@ function refreshStats(){
     <div class="stat"><div class="n mono">${contacted}</div><div class="l">In play</div></div>
     <div class="stat green"><div class="n mono">${cust}</div><div class="l">Clients</div></div>`;
   // Badge tracks the fresh queue (New) to match what the My list tab now shows.
-  el('list-count').textContent=arr.filter(r=>r.status==='new').length;
+  el('list-count').textContent=newc+revc;
 }
 
 /* ---------- table view (sortable spreadsheet-style) ---------- */
@@ -2187,6 +2321,10 @@ const TABLE_COLS=[
     cell:r=>`<td class="col-notes"><input type="text" class="table-notes-in" value="${esc(r.notes||'')}" onchange="setNote('${r.id}', this.value)"></td>`},
   {key:'message', label:'First message', get:r=>r.message||'',
     cell:r=>`<td class="col-message"><div class="col-message-wrap"><textarea class="table-message-in" placeholder="First message…" oninput="setMessage('${r.id}', this.value)">${esc(r.message||'')}</textarea><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy message">⧉</button></div></td>`},
+  {key:'email', label:'Email', get:r=>r.email||'',
+    cell:r=>`<td class="col-email"><input type="text" class="table-notes-in" value="${esc(r.email||'')}" placeholder="Email…" title="${esc(r.emailSource||'')}" onchange="setEmail('${r.id}', this.value)"></td>`},
+  {key:'emailDraft', label:'Email draft', get:r=>r.emailBody||'',
+    cell:r=>`<td class="col-emailDraft"><input type="text" class="table-notes-in" value="${esc(r.emailSubject||'')}" placeholder="Subject…" onchange="setEmailSubject('${r.id}', this.value)"><div class="col-message-wrap" style="margin-top:4px;"><textarea class="table-message-in" placeholder="Email body…" oninput="setEmailBody('${r.id}', this.value)">${esc(r.emailBody||'')}</textarea><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy email body">⧉</button><button type="button" class="icon-mini-btn" onclick="openGmail('${r.id}')" title="Open in Gmail">✉</button></div></td>`},
   {key:'links', label:'Links', sort:false, get:r=>'',
     cell:r=>`<td class="col-links"><a class="table-link" href="${mapsLink(r.name,r.addr||r.area,r.lat,r.lon)}" target="_blank" rel="noopener">Maps ↗</a></td>`}
 ];
@@ -2261,6 +2399,9 @@ function renderTable(){
     if(f==='all') return true;
     if(f==='active') return !DEAD.has(r.status);
     if(f==='dead') return DEAD.has(r.status);
+    if(f==='new') return r.status==='new' && !isReview(r);
+    if(f==='review') return isReview(r);
+    if(f==='ready') return r.status==='demo_built';
     return r.status===f;
   });
   if(search){
@@ -2351,6 +2492,9 @@ function importCSV(){
       const notes=get(col('notes'));
       const message=get(col('message'));
       const phone=get(col('phone'));
+      const email=get(col('email'));
+      const emailSubject=get(col('email_subject'));
+      const emailBody=get(col('email_body'));
       const social=get(col('social'));
       const lastContactedStr=get(col('last_contacted'));
       const lastContactedAt = lastContactedStr ? (new Date(lastContactedStr).getTime()||null) : null;
@@ -2361,6 +2505,9 @@ function importCSV(){
         if(col('notes')>=0) store[id].notes=notes;
         if(col('message')>=0) store[id].message=message;
         if(col('phone')>=0) store[id].phone=phone;
+        if(col('email')>=0) store[id].email=email;
+        if(col('email_subject')>=0) store[id].emailSubject=emailSubject;
+        if(col('email_body')>=0) store[id].emailBody=emailBody;
         if(col('social')>=0) store[id].social=social;
         if(col('type')>=0 && type) store[id].cat=type;
         if(col('last_contacted')>=0) store[id].lastContactedAt=lastContactedAt;
@@ -2375,6 +2522,9 @@ function importCSV(){
         store[id]={ id, name, area:get(col('area')), website:get(col('website')),
           phone, social, cat:type||'', lat:null, lon:null, core:false,
           status:statusKey, notes, message, addedAt, lastContactedAt, updatedAt:nowStamp() };
+        if(email) store[id].email=email;
+        if(emailSubject) store[id].emailSubject=emailSubject;
+        if(emailBody) store[id].emailBody=emailBody;
         restored++;
       }
     }
@@ -2389,10 +2539,10 @@ function importCSV(){
 function exportCSV(){
   const arr=liveRecords();
   if(!arr.length){ alert('Nothing to export yet.'); return; }
-  const cols=['name','area','type','status','website','phone','social','notes','message','last_contacted','maps_link','osm_id','added'];
+  const cols=['name','area','type','status','website','phone','email','social','notes','message','email_subject','email_body','last_contacted','maps_link','osm_id','added'];
   const rows=arr.map(r=>[
-    r.name, r.area, r.cat||'', STATUS_LABELS[r.status]||r.status, r.website, r.phone, r.social,
-    (r.notes||'').replace(/\n/g,' '), (r.message||'').replace(/\n/g,' '), (r.lastContactedAt? new Date(r.lastContactedAt).toISOString().slice(0,10):''),
+    r.name, r.area, r.cat||'', STATUS_LABELS[r.status]||r.status, r.website, r.phone, r.email||'', r.social,
+    (r.notes||'').replace(/\n/g,' '), (r.message||'').replace(/\n/g,' '), r.emailSubject||'', (r.emailBody||'').replace(/\n/g,' '), (r.lastContactedAt? new Date(r.lastContactedAt).toISOString().slice(0,10):''),
     mapsLink(r.name,r.addr||r.area,r.lat,r.lon), r.id,
     r.addedAt? new Date(r.addedAt).toISOString().slice(0,10):''
   ]);
