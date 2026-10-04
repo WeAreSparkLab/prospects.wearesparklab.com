@@ -439,6 +439,7 @@
         <option value="new" selected>New / to action</option>
         <option value="review">Needs review</option>
         <option value="ready">Ready to send</option>
+        <option value="call">To call</option>
         <option value="active">Active pipeline (all live)</option>
         <option value="all">Everything</option>
         <option value="demo_built">Demo built</option>
@@ -470,6 +471,7 @@
         <option value="active">Active pipeline</option>
         <option value="review">Needs review</option>
         <option value="ready">Ready to send</option>
+        <option value="call">To call</option>
         <option value="all">Everything</option>
         <option value="new">New / uncontacted</option>
         <option value="demo_built">Demo built</option>
@@ -1953,6 +1955,8 @@ function bizCard(r, mode){
   if(mode==='list'){
     if(isReview(r)) extra=reviewBox(r);
     else if(r.status==='demo_built' || r.email || r.emailBody) extra=kitBox(r);
+    const lf=el('filter-status');
+    if(lf && lf.value==='call' && isCallable(r)) extra=callBox(r)+extra;
   }
   const score = (mode==='result'? r.score : scoreOf(r, r.core));
   return `<div class="biz${dead}${dupeClass}">
@@ -2107,6 +2111,65 @@ async function copyDemoLink(btn, id){
   const orig=btn.textContent; btn.textContent='Copied ✓';
   setTimeout(()=>{ btn.textContent=orig; }, 1200);
 }
+/* ---------- call list: businesses with a phone number nobody has spoken to yet ---------- */
+const CALL_COOLDOWN_MS = 3*24*60*60*1000;     // a "no answer" drops out of the list for 3 days
+function isCallable(r){
+  if(!r || !(r.phone||'').trim()) return false;
+  if(r.status!=='new' && r.status!=='demo_built') return false;       // dead, already messaged, or in conversation
+  if(r.callResult==='noanswer' && Date.now()-(r.calledAt||0) < CALL_COOLDOWN_MS) return false;
+  return true;
+}
+function phoneOnly(r){ return !(r.social||'').trim() && !(r.email||'').trim(); }
+async function logCall(id, result){
+  const r=rec(id); if(!r) return;
+  const d=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  const label={noanswer:'no answer', interested:'spoke — interested', declined:'spoke — not interested'}[result];
+  if(!label) return;
+  r.notes=(r.notes ? r.notes+' ' : '')+`[Called ${d}: ${label}]`;   // appended, so a NEEDS REVIEW marker at the start survives
+  r.calledAt=Date.now(); r.callResult=result;
+  if(result==='interested') r.status='interested';
+  else if(result==='declined') r.status='said_no';
+  touch(id); await saveStore();
+  renderList(); renderTable(); refreshStats();
+}
+function callScript(r){
+  const ask = r.website
+    ? 'I’ve actually already put a free demo website together for you — could I send you the link? There’s no obligation at all.'
+    : 'I noticed you don’t have a website yet — would it be alright if I put a free demo together and sent it over? No obligation at all.';
+  return `Hi, is that ${r.name}? My name’s ___ and I’m calling on behalf of SparkLab — we build free demo websites for local businesses. ${ask} Who’s the best person to send it to, and what’s the best email or number? (If it’s a no: “No worries at all, thanks for your time!” — then log it.)`;
+}
+function callBox(r){
+  const id=esc(r.id);
+  const demo=r.website ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">Open demo ↗</a><button class="kit-btn" onclick="copyDemoLink(this,'${id}')">Copy link</button>` : '';
+  return `<div class="kit">
+    <div class="box-title">To call${phoneOnly(r) ? ' · phone only' : ''}</div>
+    <div class="kit-row"><a href="tel:${esc(r.phone.replace(/\s/g,''))}" style="font-size:16px;font-weight:600;">📞 ${esc(r.phone)}</a>${demo}</div>
+    <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13px;color:var(--ink-soft);">What to say</summary><p class="review-why" style="margin:6px 0 0;">${esc(callScript(r))}</p></details>
+    <div class="kit-row">
+      <button class="kit-btn" onclick="logCall('${id}','noanswer')">No answer</button>
+      <button class="kit-btn primary" onclick="logCall('${id}','interested')">Spoke — interested</button>
+      <button class="kit-btn" onclick="logCall('${id}','declined')">Not interested</button>
+    </div>
+  </div>`;
+}
+function downloadCSV(cols, rows, filename){
+  const csv=[cols.join(',')].concat(rows.map(row=>row.map(v=>{
+    v=(v==null?'':String(v)); return /[",\n]/.test(v)? '"'+v.replace(/"/g,'""')+'"':v;
+  }).join(','))).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=filename;
+  a.click();
+}
+function exportCallSheet(){
+  const arr=liveRecords().filter(isCallable).sort((a,b)=>(a.area||'').localeCompare(b.area||'') || (a.name||'').localeCompare(b.name||''));
+  if(!arr.length){ alert('Nobody to call right now.'); return; }
+  const rows=arr.map(r=>[r.name, r.phone, r.area||'',
+    phoneOnly(r) ? 'phone only' : [r.social?'social':'', r.email?'email':''].filter(Boolean).join(' + '),
+    STATUS_LABELS[r.status]||r.status, r.website||'', (r.notes||'').replace(/\n/g,' ')]);
+  downloadCSV(['name','phone','area','other contact','status','demo link','notes'], rows,
+    'sparklab-call-sheet-'+new Date().toISOString().slice(0,10)+'.csv');
+}
 function reviewBox(r){
   const id=esc(r.id);
   return `<div class="review-box">
@@ -2216,6 +2279,7 @@ function renderList(){
     if(f==='new') return r.status==='new' && !isReview(r);   // flagged entries have their own view
     if(f==='review') return isReview(r);
     if(f==='ready') return r.status==='demo_built';
+    if(f==='call') return isCallable(r);
     return r.status===f;
   });
   if(sort==='name') arr.sort((a,b)=>a.name.localeCompare(b.name));
@@ -2231,6 +2295,8 @@ function renderList(){
       ? 'Your fresh queue — new, uncontacted prospects only. The agent builds a demo for each one on its next run. The moment you set a status, a business moves out of here into the <b>Table view</b> pipeline.'
       : (f==='review')
       ? 'Businesses the agent couldn’t settle on its own. <b>Build demo</b> sends one back to the agent (add a note if it needs one) and it is built on the next run; <b>Has website</b> and <b>Dismiss</b> close it.'
+      : (f==='call')
+      ? 'Businesses with a phone number that nobody has spoken to yet. Tap the number to call, then log what happened — it moves on or drops out of this list. <b>Phone only</b> means there is no email or social to message them on. <button class="ghost" style="padding:4px 10px;font-size:12.5px;margin-left:6px;" onclick="exportCallSheet()">Download call sheet (CSV)</button>'
       : (f==='ready')
       ? 'Live demos waiting for you to send. <b>Open in Gmail</b> only pre-fills a draft — nothing is sent until you press Send there. Tap <b>Mark as sent</b> afterwards.'
       : 'Viewing your wider pipeline. Switch back to <b>New / to action</b> for just the fresh queue.';
@@ -2243,6 +2309,8 @@ function renderList(){
       msg='<div class="big">Nothing here yet</div>Run a search and add the businesses worth chasing.';
     }else if(f==='review'){
       msg='<div class="big">Nothing to review 🎉</div>The agent will flag anything it can’t settle here.';
+    }else if(f==='call'){
+      msg='<div class="big">Nobody to call right now</div>Businesses with a phone number show up here once they are on your list.';
     }else if(f==='ready'){
       msg='<div class="big">Nothing waiting to send</div>Demos the agent finishes will appear here with their email and message drafts.';
     }else if(f==='new'){
@@ -2265,11 +2333,13 @@ function refreshStats(){
   const newc=arr.filter(r=>r.status==='new' && !isReview(r)).length;
   const revc=arr.filter(isReview).length;
   const readyc=arr.filter(r=>r.status==='demo_built').length;
+  const callc=arr.filter(isCallable).length;
   ['filter-status','table-filter-status'].forEach(id=>{
     const sel=el(id); if(!sel) return;
     Array.from(sel.options).forEach(o=>{
       if(o.value==='review') o.textContent='Needs review'+(revc?` (${revc})`:'');
       if(o.value==='ready') o.textContent='Ready to send'+(readyc?` (${readyc})`:'');
+      if(o.value==='call') o.textContent='To call'+(callc?` (${callc})`:'');
     });
   });
   const nosite=arr.filter(r=>!r.website && !DEAD.has(r.status)).length;
@@ -2402,6 +2472,7 @@ function renderTable(){
     if(f==='new') return r.status==='new' && !isReview(r);
     if(f==='review') return isReview(r);
     if(f==='ready') return r.status==='demo_built';
+    if(f==='call') return isCallable(r);
     return r.status===f;
   });
   if(search){
