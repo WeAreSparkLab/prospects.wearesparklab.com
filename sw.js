@@ -1,4 +1,4 @@
-const CACHE = 'sparklab-prospects-v18';
+const CACHE = 'sparklab-prospects-v19';
 const SHELL = [
   './',
   './index.html',

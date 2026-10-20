@@ -439,6 +439,7 @@
         <option value="new" selected>New / to action</option>
         <option value="review">Needs review</option>
         <option value="ready">Ready to send</option>
+        <option value="followup">Follow-ups to send</option>
         <option value="call">To call</option>
         <option value="active">Active pipeline (all live)</option>
         <option value="all">Everything</option>
@@ -1953,9 +1954,10 @@ function bizCard(r, mode){
   const dupeClass = dupe ? ' dupe-card' : '';
   let extra='';
   if(mode==='list'){
+    const lf=el('filter-status');
     if(isReview(r)) extra=reviewBox(r);
     else if(r.status==='demo_built' || r.email || r.emailBody) extra=kitBox(r);
-    const lf=el('filter-status');
+    if(hasFollowUpDraft(r)) extra = (lf && lf.value==='followup') ? followUpBox(r) : followUpBox(r)+extra;
     if(lf && lf.value==='call' && isCallable(r)) extra=callBox(r)+extra;
   }
   const score = (mode==='result'? r.score : scoreOf(r, r.core));
@@ -2110,6 +2112,57 @@ async function copyDemoLink(btn, id){
   try{ await navigator.clipboard.writeText(url); }catch(e){}
   const orig=btn.textContent; btn.textContent='Copied ✓';
   setTimeout(()=>{ btn.textContent=orig; }, 1200);
+}
+/* ---------- follow-ups: drafts the agent leaves for businesses contacted 7+ days ago ----------
+   followUpSubject / followUpBody / followUpMessage (+ followUpDraftedAt) are written by the agent.
+   "Mark followed up" stamps lastContactedAt, counts followUpCount and clears the drafts, so the
+   agent writes a fresh one if they are still quiet a week later (it stops after 2). Nothing is sent
+   from here either: "Open in Gmail" only pre-fills a draft. */
+const FOLLOW_UP_STATUSES = ['message_sent','interested','quote_sent'];
+function hasFollowUpDraft(r){
+  return !!r && FOLLOW_UP_STATUSES.includes(r.status) && !!((r.followUpBody||'').trim() || (r.followUpMessage||'').trim());
+}
+async function setFollowUpField(id, field, val){ if(rec(id)){ store[id][field]=val; touch(id); await saveStore(); } }
+function followUpGmailLink(r){
+  const q=(k,v)=>k+'='+encodeURIComponent(v||'');
+  return 'https://mail.google.com/mail/?'+[q('authuser',SEND_AS),'view=cm','fs=1',q('to',r.email),q('su',r.followUpSubject),q('body',r.followUpBody)].join('&');
+}
+function openGmailFollowUp(id){
+  const r=rec(id); if(!r) return;
+  if(!(r.email||'').trim()){ alert('Add an email address first.'); return; }
+  window.open(followUpGmailLink(r), '_blank', 'noopener');
+}
+async function markFollowedUp(id){
+  const r=rec(id); if(!r) return;
+  r.lastContactedAt=Date.now();
+  r.followUpCount=(r.followUpCount||0)+1;
+  r.followUpSubject=''; r.followUpBody=''; r.followUpMessage='';
+  touch(id); await saveStore();
+  renderList(); renderTable(); refreshStats();
+}
+function followUpBox(r){
+  const id=esc(r.id);
+  const days=r.lastContactedAt ? Math.floor((Date.now()-r.lastContactedAt)/86400000) : null;
+  const meta=[days!==null ? `last contacted ${days} day${days===1?'':'s'} ago` : '',
+              r.followUpCount ? `${r.followUpCount} follow-up${r.followUpCount>1?'s':''} sent so far` : 'first follow-up'].filter(Boolean).join(' · ');
+  const demo=r.website ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">Open demo ↗</a>` : '';
+  const social=r.social ? `<a href="${esc(r.social)}" target="_blank" rel="noopener">Open social ↗</a>` : '';
+  const tel=r.phone ? `<a href="tel:${esc(r.phone.replace(/\s/g,''))}">📞 ${esc(r.phone)}</a>` : '';
+  const email=(r.followUpBody||'').trim() ? `
+    <label class="kit-lab">Follow-up email${r.email ? ' to '+esc(r.email) : ' (add an address in the outreach kit first)'}</label>
+    <div class="kit-wrap"><input type="text" placeholder="Subject" value="${esc(r.followUpSubject||'')}" oninput="setFollowUpField('${id}','followUpSubject', this.value)"><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy subject">⧉</button></div>
+    <div class="kit-wrap"><textarea placeholder="Email body" oninput="setFollowUpField('${id}','followUpBody', this.value)">${esc(r.followUpBody||'')}</textarea><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy body">⧉</button></div>
+    <div class="kit-row"><button class="kit-btn primary" onclick="openGmailFollowUp('${id}')">Open in Gmail</button></div>` : '';
+  const dm=(r.followUpMessage||'').trim() ? `
+    <label class="kit-lab">Follow-up DM</label>
+    <div class="kit-wrap"><textarea placeholder="Follow-up message…" oninput="setFollowUpField('${id}','followUpMessage', this.value)">${esc(r.followUpMessage||'')}</textarea><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy message">⧉</button></div>` : '';
+  return `<div class="kit">
+    <div class="box-title">Follow-up to send</div>
+    <div class="kit-row"><span class="src-note">${esc(meta)}</span></div>
+    <div class="kit-row">${demo}${social}${tel}</div>
+    ${email}${dm}
+    <div class="kit-row"><button class="kit-btn primary" onclick="markFollowedUp('${id}')">Mark followed up</button></div>
+  </div>`;
 }
 /* ---------- call list: businesses with a phone number nobody has spoken to yet ---------- */
 const CALL_COOLDOWN_MS = 3*24*60*60*1000;     // a "no answer" drops out of the list for 3 days
@@ -2279,6 +2332,7 @@ function renderList(){
     if(f==='new') return r.status==='new' && !isReview(r);   // flagged entries have their own view
     if(f==='review') return isReview(r);
     if(f==='ready') return r.status==='demo_built';
+    if(f==='followup') return hasFollowUpDraft(r);
     if(f==='call') return isCallable(r);
     return r.status===f;
   });
@@ -2299,6 +2353,8 @@ function renderList(){
       ? 'Businesses with a phone number that nobody has spoken to yet. Tap the number to call, then log what happened — it moves on or drops out of this list. <b>Phone only</b> means there is no email or social to message them on. <button class="ghost" style="padding:4px 10px;font-size:12.5px;margin-left:6px;" onclick="exportCallSheet()">Download call sheet (CSV)</button>'
       : (f==='ready')
       ? 'Live demos waiting for you to send. <b>Open in Gmail</b> only pre-fills a draft — nothing is sent until you press Send there. Tap <b>Mark as sent</b> afterwards.'
+      : (f==='followup')
+      ? 'Businesses you contacted 7+ days ago who haven’t replied, with a follow-up the agent drafted. Send it by email (<b>Open in Gmail</b> only pre-fills a draft) or paste the DM, then tap <b>Mark followed up</b>. If they’re still quiet a week later the agent drafts one more, then stops.'
       : 'Viewing your wider pipeline. Switch back to <b>New / to action</b> for just the fresh queue.';
   }
 
@@ -2313,6 +2369,8 @@ function renderList(){
       msg='<div class="big">Nobody to call right now</div>Businesses with a phone number show up here once they are on your list.';
     }else if(f==='ready'){
       msg='<div class="big">Nothing waiting to send</div>Demos the agent finishes will appear here with their email and message drafts.';
+    }else if(f==='followup'){
+      msg='<div class="big">No follow-ups waiting</div>The agent drafts one here for anyone you contacted 7+ days ago who hasn’t replied.';
     }else if(f==='new'){
       msg = progressed
         ? `<div class="big">Queue clear 🎉</div>No new prospects to action. Your ${progressed} in-progress business${progressed>1?'es are':' is'} in the <b>Table view</b> — or run a search to add more.`
@@ -2334,11 +2392,13 @@ function refreshStats(){
   const revc=arr.filter(isReview).length;
   const readyc=arr.filter(r=>r.status==='demo_built').length;
   const callc=arr.filter(isCallable).length;
+  const fuc=arr.filter(hasFollowUpDraft).length;
   ['filter-status','table-filter-status'].forEach(id=>{
     const sel=el(id); if(!sel) return;
     Array.from(sel.options).forEach(o=>{
       if(o.value==='review') o.textContent='Needs review'+(revc?` (${revc})`:'');
       if(o.value==='ready') o.textContent='Ready to send'+(readyc?` (${readyc})`:'');
+      if(o.value==='followup') o.textContent='Follow-ups to send'+(fuc?` (${fuc})`:'');
       if(o.value==='call') o.textContent='To call'+(callc?` (${callc})`:'');
     });
   });
