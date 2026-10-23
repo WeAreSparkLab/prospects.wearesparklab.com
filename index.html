@@ -218,6 +218,11 @@
   .kit-btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
   .kit-btn.primary:hover{background:#255955;color:#fff;}
   .src-note{font-size:11.5px;color:var(--ink-faint);}
+  .route-badge{display:inline-flex;align-items:center;font-size:11.5px;font-weight:700;letter-spacing:.03em;padding:2px 9px;border-radius:20px;line-height:1.6;}
+  .route-badge.ok{background:rgba(63,143,94,.16);color:var(--green);}
+  .route-badge.hold{background:rgba(232,163,61,.2);color:var(--spark-deep);}
+  .route-note{font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin-top:6px;}
+  .trade-facts{font-size:13px;color:var(--ink-soft);margin-top:4px;}
 
   /* table view */
   .table-scroll{overflow:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 190px);background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);}
@@ -1965,7 +1970,7 @@ function bizCard(r, mode){
     <div class="score"><div class="v">${score}</div><div class="lab">fit</div></div>
     <div class="biz-main">
       <p class="biz-name">${esc(r.name)}</p>
-      <div class="biz-meta">${r.addr?esc(r.addr)+' · ':(r.area?esc(r.area)+' · ':'')}${type} ${site} ${phone}</div>
+      <div class="biz-meta">${r.addr?esc(r.addr)+' · ':(r.area?esc(r.area)+' · ':'')}${type} ${site} ${phone} ${routeChip(r)}</div>
       <div class="biz-links">${links.join('')}</div>
       ${dupeWarn}
       ${notes}
@@ -2194,10 +2199,11 @@ function callScript(r){
 function callBox(r){
   const id=esc(r.id);
   const demo=r.website ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">Open demo ↗</a><button class="kit-btn" onclick="copyDemoLink(this,'${id}')">Copy link</button>` : '';
+  const packScript=isTrades(r) ? packSection(r.pack,'WALK-IN SCRIPT') : '';   // a trades entry brings its own script
   return `<div class="kit">
-    <div class="box-title">To call${phoneOnly(r) ? ' · phone only' : ''}</div>
+    <div class="box-title">To call${phoneOnly(r) ? ' · phone only' : ''}${r.sendRoute==='HOLD' ? ' · HOLD: call or visit, no email' : ''}</div>
     <div class="kit-row"><a href="tel:${esc(r.phone.replace(/\s/g,''))}" style="font-size:16px;font-weight:600;">📞 ${esc(r.phone)}</a>${demo}</div>
-    <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13px;color:var(--ink-soft);">What to say</summary><p class="review-why" style="margin:6px 0 0;">${esc(callScript(r))}</p></details>
+    <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:13px;color:var(--ink-soft);">${packScript ? 'Walk-in / call script from the pack' : 'What to say'}</summary><p class="review-why" style="margin:6px 0 0;">${esc(packScript || callScript(r))}</p></details>
     <div class="kit-row">
       <button class="kit-btn" onclick="logCall('${id}','noanswer')">No answer</button>
       <button class="kit-btn primary" onclick="logCall('${id}','interested')">Spoke — interested</button>
@@ -2236,7 +2242,77 @@ function reviewBox(r){
     </div>
   </div>`;
 }
+/* ---------- trades entries (workflows/trades_demo.md): send route, scores, pack ----------
+   Trades demos carry a `sendRoute`: EMAIL_OK (an active Ltd/LLP on Companies House) or HOLD (sole trader,
+   partnership, unclear: no unsolicited email or message, call or visit instead), plus old-site / demo /
+   opportunity scores and a `pack` (follow-up, replies, walk-in script) the agent wrote. A HOLD entry never gets
+   an email draft. Sara can change a route by hand after checking Companies House herself. */
+function isTrades(r){ return !!r && (!!r.sendRoute || !!r.trade); }
+async function setSendRoute(id, val){ if(rec(id)){ store[id].sendRoute=val; touch(id); await saveStore(); renderList(); renderTable(); refreshStats(); } }
+async function setPack(id, val){ if(rec(id)){ store[id].pack=val; touch(id); await saveStore(); } }
+function routeChip(r){
+  if(!r || !r.sendRoute) return '';
+  const ok=r.sendRoute==='EMAIL_OK';
+  return `<span class="route-badge ${ok?'ok':'hold'}" title="${ok?'Ltd/LLP on Companies House — email allowed':'No unsolicited email or message — call or visit'}">${esc(r.sendRoute)}</span>`;
+}
+// The pack is plain text with ALL-CAPS headings on their own line: SEND ROUTE, FOLLOW-UP, REPLIES, WALK-IN SCRIPT.
+function packSection(pack, name){
+  const re=/^(SEND ROUTE|FOLLOW-UP|REPLIES|WALK-IN SCRIPT)\b/;
+  const sections={}; let cur=null;
+  (pack||'').split('\n').forEach(line=>{
+    const t=line.trim(), m=t.match(re);
+    if(m){
+      cur=m[1]; sections[cur]=sections[cur]||[];
+      const rest=t.slice(m[0].length).replace(/^\s*(\([^)]*\))?\s*:?\s*/,'');
+      if(rest) sections[cur].push(rest);
+    }else if(cur){ sections[cur].push(line); }
+  });
+  return (sections[name]||[]).join('\n').trim();
+}
+function tradesKit(r){
+  const id=esc(r.id);
+  const hold=r.sendRoute==='HOLD', ok=r.sendRoute==='EMAIL_OK';
+  const demo=r.website ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">Open demo ↗</a><button class="kit-btn" onclick="copyDemoLink(this,'${id}')">Copy link</button>` : '';
+  const tel=r.phone ? `<a href="tel:${esc(r.phone.replace(/\s/g,''))}">📞 ${esc(r.phone)}</a>` : '';
+  const facts=[r.trade, r.entity ? r.entity+(r.companyNo ? ' · Companies House '+r.companyNo : '') : ''].filter(Boolean).join(' · ');
+  const scoreBits=[
+    (r.siteScore!=null && r.demoScore!=null) ? `Old site ${r.siteScore}/10 → demo ${r.demoScore}/10` : '',
+    (r.oppScore!=null) ? `opportunity ${r.oppScore}/10` : ''
+  ].filter(Boolean).join(' · ');
+  const routeSel=`<select class="status-sel" onchange="setSendRoute('${id}', this.value)" title="Send route">
+      <option value="EMAIL_OK"${ok?' selected':''}>EMAIL_OK</option><option value="HOLD"${hold?' selected':''}>HOLD</option>${(!ok&&!hold)?'<option value="" selected>not set</option>':''}</select>`;
+  const routeNote = hold
+    ? 'HOLD — no unsolicited email or message. Phone or visit instead, and check Companies House by hand before changing this.'
+    : ok ? 'EMAIL_OK — an active Ltd/LLP on Companies House. Read the draft, then send it yourself.'
+    : 'Send route not set yet — nothing should be sent until it is.';
+  const src=r.emailSource ? `<div class="kit-row" style="margin-top:4px;"><span class="src-note">via ${esc(r.emailSource)}</span></div>` : '';
+  const emailBlock = hold ? '' : `
+    <label class="kit-lab">Email</label>
+    <div class="kit-wrap"><input type="text" placeholder="business email" value="${esc(r.email||'')}" oninput="setEmail('${id}', this.value)"></div>
+    ${src}
+    <label class="kit-lab">Email draft</label>
+    <div class="kit-wrap"><input type="text" placeholder="Subject" value="${esc(r.emailSubject||'')}" oninput="setEmailSubject('${id}', this.value)"><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy subject">⧉</button></div>
+    <div class="kit-wrap"><textarea placeholder="Email body" oninput="setEmailBody('${id}', this.value)">${esc(r.emailBody||'')}</textarea><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy body">⧉</button></div>
+    <div class="kit-row"><button class="kit-btn primary" onclick="openGmail('${id}')">Open in Gmail</button></div>`;
+  const pack = (r.pack||'').trim() ? `
+    <details style="margin-top:10px;" ${hold?'open':''}><summary style="cursor:pointer;font-size:13px;color:var(--ink-soft);">Follow-up, replies and walk-in script</summary>
+      <div class="kit-wrap"><textarea style="min-height:180px;" oninput="setPack('${id}', this.value)">${esc(r.pack)}</textarea><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy the pack">⧉</button></div>
+    </details>` : '';
+  const sent=r.status==='demo_built' ? `<button class="kit-btn primary" onclick="setStatus('${id}','message_sent')">Mark as sent</button>` : '';
+  return `<div class="kit">
+    <div class="box-title">${r.status==='demo_built' ? 'Ready to send' : 'Outreach kit'} · trades</div>
+    ${facts ? `<div class="trade-facts">${esc(facts)}</div>` : ''}
+    ${scoreBits ? `<div class="trade-facts">${esc(scoreBits)}</div>` : ''}
+    <div class="kit-row">${demo}${tel}</div>
+    <div class="kit-row"><span class="src-note">Send route</span>${routeSel}</div>
+    <div class="route-note">${esc(routeNote)}</div>
+    ${emailBlock}
+    ${pack}
+    <div class="kit-row">${sent}</div>
+  </div>`;
+}
 function kitBox(r){
+  if(isTrades(r)) return tradesKit(r);
   const id=esc(r.id);
   const demo=r.website ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">Open demo ↗</a><button class="kit-btn" onclick="copyDemoLink(this,'${id}')">Copy link</button>` : '';
   const tel=r.phone ? `<a href="tel:${esc(r.phone.replace(/\s/g,''))}">📞 ${esc(r.phone)}</a>` : '';
@@ -2670,12 +2746,13 @@ function importCSV(){
 function exportCSV(){
   const arr=liveRecords();
   if(!arr.length){ alert('Nothing to export yet.'); return; }
-  const cols=['name','area','type','status','website','phone','email','social','notes','message','email_subject','email_body','last_contacted','maps_link','osm_id','added'];
+  const cols=['name','area','type','status','website','phone','email','social','notes','message','email_subject','email_body','last_contacted','maps_link','osm_id','added','trade','entity','company_no','send_route','site_score','demo_score','opportunity'];
   const rows=arr.map(r=>[
     r.name, r.area, r.cat||'', STATUS_LABELS[r.status]||r.status, r.website, r.phone, r.email||'', r.social,
     (r.notes||'').replace(/\n/g,' '), (r.message||'').replace(/\n/g,' '), r.emailSubject||'', (r.emailBody||'').replace(/\n/g,' '), (r.lastContactedAt? new Date(r.lastContactedAt).toISOString().slice(0,10):''),
     mapsLink(r.name,r.addr||r.area,r.lat,r.lon), r.id,
-    r.addedAt? new Date(r.addedAt).toISOString().slice(0,10):''
+    r.addedAt? new Date(r.addedAt).toISOString().slice(0,10):'',
+    r.trade||'', r.entity||'', r.companyNo||'', r.sendRoute||'', r.siteScore==null?'':r.siteScore, r.demoScore==null?'':r.demoScore, r.oppScore==null?'':r.oppScore
   ]);
   const csv=[cols.join(',')].concat(rows.map(row=>row.map(v=>{
     v=(v==null?'':String(v)); return /[",\n]/.test(v)? '"'+v.replace(/"/g,'""')+'"':v;
