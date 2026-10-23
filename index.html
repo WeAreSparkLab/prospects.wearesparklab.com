@@ -2274,6 +2274,7 @@ function tradesKit(r){
   const hold=r.sendRoute==='HOLD', ok=r.sendRoute==='EMAIL_OK';
   const demo=r.website ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">Open demo ↗</a><button class="kit-btn" onclick="copyDemoLink(this,'${id}')">Copy link</button>` : '';
   const tel=r.phone ? `<a href="tel:${esc(r.phone.replace(/\s/g,''))}">📞 ${esc(r.phone)}</a>` : '';
+  const oldSite=r.oldSite ? `<a href="${esc(r.oldSite)}" target="_blank" rel="noopener">Their current site ↗</a>` : '';
   const facts=[r.trade, r.entity ? r.entity+(r.companyNo ? ' · Companies House '+r.companyNo : '') : ''].filter(Boolean).join(' · ');
   const scoreBits=[
     (r.siteScore!=null && r.demoScore!=null) ? `Old site ${r.siteScore}/10 → demo ${r.demoScore}/10` : '',
@@ -2303,7 +2304,7 @@ function tradesKit(r){
     <div class="box-title">${r.status==='demo_built' ? 'Ready to send' : 'Outreach kit'} · trades</div>
     ${facts ? `<div class="trade-facts">${esc(facts)}</div>` : ''}
     ${scoreBits ? `<div class="trade-facts">${esc(scoreBits)}</div>` : ''}
-    <div class="kit-row">${demo}${tel}</div>
+    <div class="kit-row">${demo}${tel}${oldSite}</div>
     <div class="kit-row"><span class="src-note">Send route</span>${routeSel}</div>
     <div class="route-note">${esc(routeNote)}</div>
     ${emailBlock}
