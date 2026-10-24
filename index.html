@@ -1924,6 +1924,7 @@ function bizCard(r, mode){
   links.push(`<a href="${mapsLink(r.name, r.addr||r.area, r.lat, r.lon)}" target="_blank" rel="noopener">Maps ↗</a>`);
   if(r.lat&&r.lon) links.push(`<a href="${mapsPinLink(r.lat, r.lon)}" target="_blank" rel="noopener" title="Drop a pin at the exact spot — use this if the name search finds nothing">Pin ↗</a>`);
   if(websiteUrl) links.push(`<a href="${esc(websiteUrl)}" target="_blank" rel="noopener">Site ↗</a>`);
+  socialLinkList(r).forEach(a=>links.push(a));
   if(r.lat&&r.lon) links.push(`<a href="https://www.openstreetmap.org/${r.id}" target="_blank" rel="noopener">OSM ↗</a>`);
 
   let actions;
@@ -2284,7 +2285,9 @@ function tradesKit(r){
       <option value="EMAIL_OK"${ok?' selected':''}>EMAIL_OK</option><option value="HOLD"${hold?' selected':''}>HOLD</option>${(!ok&&!hold)?'<option value="" selected>not set</option>':''}</select>`;
   const routeNote = hold
     ? 'HOLD — no unsolicited email or message. Phone or visit instead, and check Companies House by hand before changing this.'
-    : ok ? 'EMAIL_OK — an active Ltd/LLP on Companies House. Read the draft, then send it yourself.'
+    : ok ? ((r.email||'').trim()
+        ? 'EMAIL_OK — an active Ltd/LLP on Companies House. Read the draft, then send it yourself.'
+        : 'EMAIL_OK means an email is allowed, not that one was found. No public email address turned up for this business, so add one if you find it, or call or message them using the links above.')
     : 'Send route not set yet — nothing should be sent until it is.';
   const src=r.emailSource ? `<div class="kit-row" style="margin-top:4px;"><span class="src-note">via ${esc(r.emailSource)}</span></div>` : '';
   const emailBlock = hold ? '' : `
@@ -2321,10 +2324,11 @@ function kitBox(r){
   const sent=r.status==='demo_built' ? `<button class="kit-btn primary" onclick="setStatus('${id}','message_sent')">Mark as sent</button>` : '';
   return `<div class="kit">
     <div class="box-title">${r.status==='demo_built' ? 'Ready to send' : 'Outreach kit'}</div>
-    <div class="kit-row">${demo}${tel}</div>
+    <div class="kit-row">${demo}${tel}${socialLinkList(r).join('')}</div>
     <label class="kit-lab">Email</label>
     <div class="kit-wrap"><input type="text" placeholder="business email" value="${esc(r.email||'')}" oninput="setEmail('${id}', this.value)"></div>
     ${src ? `<div class="kit-row" style="margin-top:4px;">${src}</div>` : ''}
+    ${(!(r.email||'').trim() && r.emailChecked) ? `<div class="kit-row" style="margin-top:4px;"><span class="src-note">No public email found. Add one, or send the DM draft below${socialLinkList(r).length ? ' using the Facebook / Instagram link above' : ''}.</span></div>` : ''}
     <label class="kit-lab">Email draft</label>
     <div class="kit-wrap"><input type="text" placeholder="Subject" value="${esc(r.emailSubject||'')}" oninput="setEmailSubject('${id}', this.value)"><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy subject">⧉</button></div>
     <div class="kit-wrap"><textarea placeholder="Email body" oninput="setEmailBody('${id}', this.value)">${esc(r.emailBody||'')}</textarea><button type="button" class="icon-mini-btn" onclick="copyMessageFromTextarea(this)" title="Copy body">⧉</button></div>
@@ -2365,6 +2369,18 @@ function socialUrl(social){
   if(/^https?:\/\//i.test(s)) return s;
   if(s.includes('.')) return 'https://'+s.replace(/^\/+/,'');
   return 'https://instagram.com/'+s.replace(/^@/,'');
+}
+// One link per saved profile, named by network, so a Facebook or Instagram page is a tap away on
+// the card (the saved value can hold one or both, separated by spaces or commas).
+function socialLinkList(r){
+  const seen=new Set();
+  return (r.social||'').split(/[\s,;]+/).filter(Boolean).map(tok=>{
+    const url=socialUrl(tok);
+    if(!url || seen.has(url)) return '';
+    seen.add(url);
+    const label=/instagram\.com/i.test(url) ? 'Instagram' : /facebook\.com|fb\.com|fb\.me/i.test(url) ? 'Facebook' : 'Social';
+    return `<a href="${esc(url)}" target="_blank" rel="noopener">${label} ↗</a>`;
+  }).filter(Boolean);
 }
 function openSocialFromInput(btn){
   const input=btn.previousElementSibling;
