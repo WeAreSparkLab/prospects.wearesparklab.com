@@ -524,8 +524,8 @@ function accountKey(key){ return activeUserId ? `${key}:user:${activeUserId}` : 
 function accountGet(key){ const k=accountKey(key); return k ? localStorage.getItem(k) : null; }
 function accountSet(key, value){ const k=accountKey(key); if(k) localStorage.setItem(k,value); }
 function accountRemove(key){ const k=accountKey(key); if(k) localStorage.removeItem(k); }
-// The former app used shared keys. Move them once, only for the account that owned
-// the existing browser session, or after an explicit confirmation at sign-in.
+// The former app used shared keys. Move them only after the signed-in user
+// confirms that the older browser list belongs to this account.
 function migrateLegacy(){
   if(!activeUserId || !localStorage.getItem(STORE_KEY)) return;
   const boundOwner = localStorage.getItem(LEGACY_OWNER_KEY);
@@ -539,15 +539,17 @@ function migrateLegacy(){
       const value=localStorage.getItem(key);
       if(value == null) continue;
       const scoped=accountKey(key);
-      if(localStorage.getItem(scoped) == null){ localStorage.setItem(scoped,value); copied.push(scoped); }
-      if(localStorage.getItem(scoped) == null) throw new Error('Migration write failed');
+      const existing = localStorage.getItem(scoped);
+      if(existing != null && existing !== value) throw new Error('Conflicting account copy; old data was preserved');
+      if(existing == null){ localStorage.setItem(scoped,value); copied.push(scoped); }
+      if(localStorage.getItem(scoped) !== value) throw new Error('Migration write failed');
     }
     localStorage.setItem(LEGACY_OWNER_KEY, activeUserId);
     for(const key of ACCOUNT_KEYS) localStorage.removeItem(key);
   }catch(e){
     for(const key of copied) localStorage.removeItem(key);
     console.error('Could not move the local prospect list into account storage',e);
-    alert('Your older local list is still safe in this browser, but it could not be moved. Please free some browser storage and reload before editing.');
+    alert('Your older local list is still safe in this browser, but it could not be moved into this account. Please reload and check browser storage before editing.');
     throw e;
   }
 }
