@@ -849,6 +849,22 @@ function saveCloudSession(){
   }catch(e){}
 }
 
+async function cloudSignUp(email, password){
+  const r = await fetch(`${SB_URL}/auth/v1/signup?redirect_to=${encodeURIComponent(location.origin + location.pathname)}`, {
+    method:'POST',
+    headers:{ apikey:SB_ANON, 'Content-Type':'application/json' },
+    body: JSON.stringify({ email:(email||'').trim(), password })
+  });
+  if(!r.ok){
+    let msg = 'Could not create the account. Please try again.';
+    try{ const j = await r.json(); msg = j.error_description || j.msg || j.error || msg; }catch(e){}
+    throw new Error(msg);
+  }
+  // Keep the visitor signed out until they explicitly log in. Supabase may
+  // return a session immediately when email confirmation is disabled.
+  return r.json();
+}
+
 async function cloudLogin(email, password){
   const r = await fetch(`${SB_URL}/auth/v1/token?grant_type=password`, {
     method:'POST',
@@ -1072,13 +1088,50 @@ function ensureLoginOverlay(){
       '<input id="login-email" type="email" placeholder="Email" autocomplete="username" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;">' +
       '<input id="login-pw" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;">' +
       '<button id="login-btn" style="width:100%;padding:11px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Log in</button>' +
-      '<div id="login-err" style="color:#c0392b;font-size:13px;margin-top:10px;min-height:18px;"></div>' +
+      '<div id="login-err" role="status" aria-live="polite" style="color:#c0392b;font-size:13px;margin-top:10px;min-height:18px;"></div>' +
+      '<div style="text-align:center;margin-top:6px;"><a href="#" id="signup-open" style="font-size:13px;color:#2563eb;text-decoration:underline;">Create an account</a></div>' +
+      '<div id="signup-panel" style="display:none;margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px;">' +
+        '<div style="font-weight:600;font-size:14px;margin-bottom:8px;">Create your own private workspace</div>' +
+        '<p style="font-size:12px;line-height:1.4;color:#475569;margin:0 0 10px;">Use the email and password above. Your prospects will be saved to your account.</p>' +
+        '<button id="signup-btn" style="width:100%;padding:10px;border:0;border-radius:8px;background:#0f766e;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Create account</button>' +
+        '<div id="signup-msg" role="status" aria-live="polite" style="font-size:13px;margin-top:10px;min-height:18px;"></div>' +
+      '</div>' +
       '<div style="text-align:center;margin-top:6px;"><a href="#" id="login-skip" style="font-size:12px;color:#64748b;text-decoration:underline;">Explore sample data without signing in</a></div>' +
     '</div>';
   document.body.appendChild(o);
   document.getElementById('login-skip').addEventListener('click', e=>{
     // Public preview is isolated from the signed-in list and never saved.
     e.preventDefault(); openDemo(); hideLoginOverlay();
+  });
+  document.getElementById('signup-open').addEventListener('click', e=>{
+    e.preventDefault();
+    const panel = document.getElementById('signup-panel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    if(panel.style.display === 'block') document.getElementById('login-email').focus();
+  });
+  document.getElementById('signup-btn').addEventListener('click', async ()=>{
+    const em = document.getElementById('login-email').value.trim();
+    const pw = document.getElementById('login-pw').value;
+    const msg = document.getElementById('signup-msg');
+    const btn = document.getElementById('signup-btn');
+    msg.textContent = '';
+    msg.style.color = '#c0392b';
+    if(!em || !document.getElementById('login-email').checkValidity()){
+      msg.textContent = 'Enter a valid email address.'; return;
+    }
+    if(pw.length < 8){
+      msg.textContent = 'Use a password with at least 8 characters.'; return;
+    }
+    btn.disabled = true; btn.textContent = 'Creating account…';
+    try{
+      const result = await cloudSignUp(em, pw);
+      msg.style.color = '#166534';
+      msg.textContent = result.access_token
+        ? 'Account created. Log in above to open your private workspace.'
+        : 'Check your email to confirm your account, then log in above.';
+    }catch(e){
+      msg.textContent = e.message || 'Could not create the account.';
+    }finally{ btn.disabled = false; btn.textContent = 'Create account'; }
   });
   const doLogin = async ()=>{
     const em = document.getElementById('login-email').value;
