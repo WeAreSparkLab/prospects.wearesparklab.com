@@ -1124,9 +1124,11 @@ function ensureLoginOverlay(){
     }
     btn.disabled = true; btn.textContent = 'Creating account…';
     try{
-      await cloudSignUp(em, pw);
+      const result = await cloudSignUp(em, pw);
       msg.style.color = '#166534';
-      msg.textContent = 'Check your email for a confirmation link. If confirmation is already complete, log in above.';
+      msg.textContent = result.access_token
+        ? 'Account created. Log in above to open your private workspace.'
+        : 'Check your email to confirm your account, then log in above.';
     }catch(e){
       msg.textContent = e.message || 'Could not create the account.';
     }finally{ btn.disabled = false; btn.textContent = 'Create account'; }
