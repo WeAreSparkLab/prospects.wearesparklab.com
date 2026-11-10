@@ -1075,6 +1075,72 @@ async function syncNow(){
   if(changed) rerenderAll(); else { refreshStats(); updateSaveIndicator(false); }
 }
 
+/* ---------- password recovery ---------- */
+let recoveryToken = null;
+function takeRecoveryToken(){
+  const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if(params.get('type') !== 'recovery' || !params.get('access_token')) return false;
+  recoveryToken = params.get('access_token');
+  // Remove the one-time credential from the visible URL and browser history.
+  history.replaceState(null, '', location.pathname + location.search);
+  return true;
+}
+async function requestPasswordReset(email){
+  const r = await fetch(`${SB_URL}/auth/v1/recover?redirect_to=${encodeURIComponent('https://prospects.wearesparklab.com/')}`, {
+    method:'POST',
+    headers:{ apikey:SB_ANON, 'Content-Type':'application/json' },
+    body: JSON.stringify({ email:email.trim() })
+  });
+  if(!r.ok) throw new Error('The reset email could not be sent. Please try again later.');
+}
+function showRecoveryOverlay(){
+  let o = document.getElementById('recovery-overlay');
+  if(!o){
+    o = document.createElement('div');
+    o.id = 'recovery-overlay';
+    o.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.85);';
+    o.innerHTML =
+      '<div style="background:#fff;color:#0f172a;width:min(360px,92vw);border-radius:14px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.35);font-family:inherit;">' +
+        '<h2 style="font-size:18px;margin:0 0 8px;">Choose a new password</h2>' +
+        '<p style="font-size:13px;color:#475569;margin:0 0 16px;">Enter a new password for your account.</p>' +
+        '<input id="recovery-password" type="password" placeholder="New password" autocomplete="new-password" aria-label="New password" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;">' +
+        '<input id="recovery-confirm" type="password" placeholder="Confirm new password" autocomplete="new-password" aria-label="Confirm new password" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;">' +
+        '<button id="recovery-save" style="width:100%;padding:11px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Save new password</button>' +
+        '<div id="recovery-message" role="status" aria-live="polite" style="font-size:13px;margin-top:10px;min-height:18px;"></div>' +
+      '</div>';
+    document.body.appendChild(o);
+    document.getElementById('recovery-save').addEventListener('click', async ()=>{
+      const pw = document.getElementById('recovery-password').value;
+      const confirm = document.getElementById('recovery-confirm').value;
+      const msg = document.getElementById('recovery-message');
+      const btn = document.getElementById('recovery-save');
+      msg.style.color = '#c0392b'; msg.textContent = '';
+      if(pw.length < 8){ msg.textContent = 'Use at least 8 characters.'; return; }
+      if(pw !== confirm){ msg.textContent = 'The passwords do not match.'; return; }
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try{
+        const r = await fetch(`${SB_URL}/auth/v1/user`, {
+          method:'PUT',
+          headers:{ apikey:SB_ANON, Authorization:'Bearer ' + recoveryToken, 'Content-Type':'application/json' },
+          body: JSON.stringify({ password:pw })
+        });
+        if(!r.ok) throw new Error('The reset link has expired or could not be used. Request a new one.');
+        recoveryToken = null;
+        cloudSession = null; saveCloudSession();
+        document.getElementById('recovery-password').value = '';
+        document.getElementById('recovery-confirm').value = '';
+        o.remove();
+        showLoginOverlay();
+        const notice = document.getElementById('login-err');
+        notice.style.color = '#166534';
+        notice.textContent = 'Password updated. Log in with your new password.';
+      }catch(e){ msg.textContent = e.message || 'Could not reset your password.'; }
+      finally{ btn.disabled = false; btn.textContent = 'Save new password'; }
+    });
+  }
+  document.getElementById('recovery-password').focus();
+}
+
 /* ---------- login overlay + account bar ---------- */
 function ensureLoginOverlay(){
   if(document.getElementById('login-overlay')) return;
@@ -1090,6 +1156,12 @@ function ensureLoginOverlay(){
       '<button id="login-btn" style="width:100%;padding:11px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Log in</button>' +
       '<div id="login-err" role="status" aria-live="polite" style="color:#c0392b;font-size:13px;margin-top:10px;min-height:18px;"></div>' +
       '<div style="text-align:center;margin-top:6px;"><a href="#" id="signup-open" style="font-size:13px;color:#2563eb;text-decoration:underline;">Create an account</a></div>' +
+      '<div style="text-align:center;margin-top:6px;"><a href="#" id="forgot-open" style="font-size:13px;color:#2563eb;text-decoration:underline;">Forgot password?</a></div>' +
+      '<div id="forgot-panel" style="display:none;margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px;">' +
+        '<p style="font-size:12px;line-height:1.4;color:#475569;margin:0 0 10px;">Enter your email above and we’ll send a reset link.</p>' +
+        '<button id="forgot-send" style="width:100%;padding:10px;border:0;border-radius:8px;background:#0f766e;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Send reset link</button>' +
+        '<div id="forgot-message" role="status" aria-live="polite" style="font-size:13px;margin-top:10px;min-height:18px;"></div>' +
+      '</div>' +
       '<div id="signup-panel" style="display:none;margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px;">' +
         '<div style="font-weight:600;font-size:14px;margin-bottom:8px;">Create your own private workspace</div>' +
         '<p style="font-size:12px;line-height:1.4;color:#475569;margin:0 0 10px;">Use the email and password above. Your prospects will be saved to your account.</p>' +
@@ -1102,6 +1174,26 @@ function ensureLoginOverlay(){
   document.getElementById('login-skip').addEventListener('click', e=>{
     // Public preview is isolated from the signed-in list and never saved.
     e.preventDefault(); openDemo(); hideLoginOverlay();
+  });
+  document.getElementById('forgot-open').addEventListener('click', e=>{
+    e.preventDefault();
+    const panel = document.getElementById('forgot-panel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    if(panel.style.display === 'block') document.getElementById('login-email').focus();
+  });
+  document.getElementById('forgot-send').addEventListener('click', async ()=>{
+    const input = document.getElementById('login-email');
+    const msg = document.getElementById('forgot-message');
+    const btn = document.getElementById('forgot-send');
+    msg.textContent = ''; msg.style.color = '#c0392b';
+    if(!input.value.trim() || !input.checkValidity()){ msg.textContent = 'Enter a valid email address above.'; return; }
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try{
+      await requestPasswordReset(input.value);
+      msg.style.color = '#166534';
+      msg.textContent = 'If this account exists, a reset link is on its way. Check your inbox.';
+    }catch(e){ msg.textContent = e.message || 'The reset email could not be sent.'; }
+    finally{ btn.disabled = false; btn.textContent = 'Send reset link'; }
   });
   document.getElementById('signup-open').addEventListener('click', e=>{
     e.preventDefault();
@@ -3043,7 +3135,8 @@ function showTab(t){
 
 /* ---------- init ---------- */
 (async function init(){
-  loadCloudSession();
+  const isRecovering = takeRecoveryToken();
+  if(!isRecovering) loadCloudSession();
   if(cloudLoggedIn()){
     await cloudRefresh();
     if(cloudSession){
@@ -3101,6 +3194,7 @@ function showTab(t){
 
   // Private data is loaded only after authentication; guests see sample records.
   if(cloudLoggedIn()) syncNow().catch(()=>{});
+  else if(isRecovering) showRecoveryOverlay();
   else showLoginOverlay();
 })();
 
