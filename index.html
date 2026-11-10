@@ -516,6 +516,21 @@ const STORE_KEY = 'prospects_v1';
 const SETTINGS_KEY = 'settings_v1';
 const THEME_KEY = 'theme_v1';
 let store = {};          // id -> record
+let demoMode = true;      // signed-out visitors only see in-memory sample data
+const DEMO_RECORDS = Object.freeze({
+  'demo/1': {id:'demo/1',name:'Willow Lane Flowers',area:'Norwich',cat:'Florist',status:'new',website:'',phone:'',email:'',notes:'Sample prospect for demonstration only.',addedAt:1,updatedAt:1},
+  'demo/2': {id:'demo/2',name:'North Street Studio',area:'Norwich',cat:'Wellness',status:'demo_built',website:'https://example.com',phone:'',email:'',notes:'Fictional business. No outreach has occurred.',addedAt:2,updatedAt:2},
+  'demo/3': {id:'demo/3',name:'Oak & Fern Services',area:'Norwich',cat:'Home services',status:'interested',website:'',phone:'',email:'',notes:'Fictional pipeline example.',addedAt:3,updatedAt:3}
+});
+function openDemo(){
+  demoMode = true;
+  store = structuredClone(DEMO_RECORDS);
+  storeLoadedOk = true;
+  cloudDirty = false;
+  lastResults = [];
+  renderAccountBar();
+  rerenderAll();
+}
 
 /* ---------- cloud config (Supabase) ----------
    The publishable key is safe to ship publicly: the database has row-level
@@ -567,6 +582,7 @@ function liveRecords(){ return Object.values(store).filter(isLive); }
 function liveCount(){ let n = 0; for(const k in store){ if(isLive(store[k])) n++; } return n; }
 
 async function loadStore(){
+  if(demoMode) return;
   try{
     const raw = localStorage.getItem(STORE_KEY);
     if(raw){
@@ -625,7 +641,8 @@ function updateSaveIndicator(blocked){
     return;
   }
   let cloud;
-  if(!cloudLoggedIn())   cloud = ' · ⚠ not signed in — this device only';
+  if(demoMode)           cloud = ' · demo data only — changes are not saved';
+  else if(!cloudLoggedIn()) cloud = ' · ⚠ not signed in — this device only';
   else if(cloudDirty)    cloud = cloudOnline ? ' · ☁ saving…' : ' · ☁ offline — will sync when back';
   else                   cloud = ' · ☁ synced';
   el2.textContent = `Saved: ${n} ${n===1?'business':'businesses'} · ${time}${cloud}`;
@@ -634,6 +651,7 @@ function updateSaveIndicator(blocked){
 
 // Local write only — no cloud. Returns false if the empty-store guard blocked it.
 function writeLocal(){
+  if(demoMode) return true; // demo edits never reach private browser storage
   const keys = Object.keys(store);
   if(keys.length === 0){
     // Guard: never let an empty in-memory store overwrite non-empty existing data.
@@ -672,6 +690,7 @@ function writeLocal(){
 }
 
 async function saveStore(){
+  if(demoMode){ updateSaveIndicator(false); return; }
   if(!writeLocal()) return;
   if(cloudLoggedIn()) markDirty(true);   // stays set until the server confirms the write
   updateSaveIndicator(false);
@@ -762,8 +781,14 @@ async function cloudRefresh(){
 }
 
 function cloudLogout(){
+  if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
+  clearRetry();
   cloudSession = null; saveCloudSession();
-  renderAccountBar(); updateSaveIndicator(false);
+  openDemo();
+  const emailInput = document.getElementById('login-email');
+  if(emailInput) emailInput.value = '';
+  const passwordInput = document.getElementById('login-pw');
+  if(passwordInput) passwordInput.value = '';
   showLoginOverlay();
 }
 
@@ -897,8 +922,10 @@ function rerenderAll(){
 // Pull the cloud copy, merge it with whatever is local, then push the result.
 async function syncNow(){
   if(!cloudLoggedIn()) return;
+  const sessionId = cloudSession.user_id;
   let pulled = null;
   try{ pulled = await cloudPull(); }catch(e){ pulled = null; }
+  if(demoMode || !cloudLoggedIn() || cloudSession.user_id !== sessionId) return;
   if(!pulled){
     // Couldn't reach the cloud. The change stays queued locally and dirty, and
     // the retry timer keeps trying — it is never dropped on the floor.
@@ -939,13 +966,12 @@ function ensureLoginOverlay(){
       '<input id="login-pw" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;">' +
       '<button id="login-btn" style="width:100%;padding:11px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Log in</button>' +
       '<div id="login-err" style="color:#c0392b;font-size:13px;margin-top:10px;min-height:18px;"></div>' +
-      '<div style="text-align:center;margin-top:6px;"><a href="#" id="login-skip" style="font-size:12px;color:#64748b;text-decoration:underline;">Continue without signing in</a></div>' +
+      '<div style="text-align:center;margin-top:6px;"><a href="#" id="login-skip" style="font-size:12px;color:#64748b;text-decoration:underline;">Explore sample data without signing in</a></div>' +
     '</div>';
   document.body.appendChild(o);
   document.getElementById('login-skip').addEventListener('click', e=>{
-    // Escape hatch so a forgotten password never locks anyone out of their
-    // local data. The list stays saved on this device; it just isn't backed up.
-    e.preventDefault(); hideLoginOverlay(); updateSaveIndicator(false);
+    // Public preview is isolated from the signed-in list and never saved.
+    e.preventDefault(); openDemo(); hideLoginOverlay();
   });
   const doLogin = async ()=>{
     const em = document.getElementById('login-email').value;
@@ -955,8 +981,11 @@ function ensureLoginOverlay(){
     errEl.textContent = ''; btn.disabled = true; btn.textContent = 'Logging in…';
     try{
       await cloudLogin(em, pw);
+      demoMode = false;
+      await loadStore();
       hideLoginOverlay();
       renderAccountBar();
+      rerenderAll();
       await syncNow();
     }catch(e){
       errEl.textContent = e.message || 'Login failed';
@@ -969,7 +998,7 @@ function showLoginOverlay(){
   ensureLoginOverlay();
   document.getElementById('login-overlay').style.display = 'flex';
   const emEl = document.getElementById('login-email');
-  if(emEl && !emEl.value){ try{ emEl.value = localStorage.getItem(SB_EMAIL_KEY) || ''; }catch(e){} }
+  // Do not reveal the last account's email to a signed-out visitor.
   (emEl && !emEl.value ? emEl : document.getElementById('login-pw')).focus();
 }
 function hideLoginOverlay(){ const o = document.getElementById('login-overlay'); if(o) o.style.display = 'none'; }
@@ -2796,8 +2825,12 @@ function showTab(t){
 
 /* ---------- init ---------- */
 (async function init(){
-  await loadStore();          // local first — instant and offline-safe
   loadCloudSession();
+  if(cloudLoggedIn()){
+    await cloudRefresh();
+    if(cloudSession){ demoMode = false; await loadStore(); }
+    else openDemo();
+  } else openDemo();
   loadVisited();              // which map pins you've already opened (device-local)
   loadColOrder();
   try{ const v=localStorage.getItem(MAPVIEW_KEY); if(v==='map'||v==='list') resultView=v; }catch(e){}
@@ -2836,14 +2869,9 @@ function showTab(t){
   // Re-sync automatically when connectivity comes back.
   window.addEventListener('online', ()=>{ if(cloudLoggedIn()){ clearRetry(); syncNow().catch(()=>{}); } });
 
-  // Cloud: restore a stored session and sync in the background; otherwise ask to log in.
-  if(cloudLoggedIn()){
-    await cloudRefresh();               // validate/rotate token (only clears session if truly rejected)
-    if(cloudSession){ renderAccountBar(); syncNow().catch(()=>{}); }
-    else { showLoginOverlay(); }
-  } else {
-    showLoginOverlay();
-  }
+  // Private data is loaded only after authentication; guests see sample records.
+  if(cloudLoggedIn()) syncNow().catch(()=>{});
+  else showLoginOverlay();
 })();
 
 if('serviceWorker' in navigator){
