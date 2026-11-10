@@ -2763,6 +2763,7 @@ function setupColumnDrag(){
 function sizeTableHeight(){
   const box=document.querySelector('.table-scroll');
   if(!box || !el('panel-table').classList.contains('active')) return;
+  if(window.innerWidth <= 680 && tableCompact){ box.style.maxHeight='none'; return; }
   const top=box.getBoundingClientRect().top;
   box.style.maxHeight=Math.max(240, window.innerHeight - top - 20)+'px';
 }
