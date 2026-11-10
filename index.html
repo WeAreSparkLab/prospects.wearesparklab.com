@@ -295,14 +295,37 @@
   .table-link{color:var(--teal);text-decoration:none;font-weight:500;margin-right:8px;}
   .table-link:hover{border-bottom:1px solid var(--teal);}
   .table-toolbar-search{width:220px;padding:8px 11px;font-size:14px;}
+  .data-table.compact{min-width:690px;table-layout:fixed;}
+  .data-table.compact .col-name{width:25%;}
+  .data-table.compact .col-area{width:16%;}
+  .data-table.compact .col-status{width:20%;}
+  .data-table.compact .col-website{width:25%;}
+  .data-table.compact .col-details{width:14%;}
+  .data-table.compact th[draggable="true"]{cursor:pointer;}
+  .detail-overlay{position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.72);display:flex;justify-content:flex-end;}
+  .detail-overlay[hidden]{display:none;}
+  .detail-panel{height:100%;width:min(600px,100%);overflow:auto;background:var(--card);padding:24px;box-shadow:-12px 0 40px rgba(0,0,0,.25);}
+  .detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;}
+  .detail-head h2{font-family:'Space Grotesk';font-size:22px;margin:0;}
+  .detail-head p{color:var(--ink-soft);margin:4px 0 0;}
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .detail-grid label{font-size:12px;font-weight:600;color:var(--ink-soft);}
+  .detail-grid input,.detail-grid textarea{display:block;width:100%;margin-top:5px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:14px 'Inter',sans-serif;}
+  .detail-grid textarea{resize:vertical;}
+  .detail-grid .detail-wide{grid-column:1/-1;}
   .wrap.wide{max-width:1320px;}
   @media (max-width:760px){ .wrap{max-width:100%;} }
 
-  .foot{margin-top:30px;font-size:12px;color:var(--ink-faint);line-height:1.6;border-top:1px solid var(--line);padding-top:16px;}
+  .foot{margin-top:30px;font-size:13px;color:var(--ink-faint);line-height:1.6;border-top:1px solid var(--line);padding-top:16px;}
+  .foot summary{cursor:pointer;color:var(--ink-soft);font-weight:600;}
+  .help-body{max-width:760px;padding-top:12px;}
+  .help-body p{margin:0 0 10px;}
   .foot b{color:var(--ink-soft);}
   a.link{color:var(--teal);}
 
   @media (max-width:680px){
+    .detail-panel{padding:18px;}
+    .detail-grid{grid-template-columns:1fr;}
     .field-grid{grid-template-columns:1fr;}
     .stats{width:100%;overflow-x:auto;}
     header.app{align-items:flex-start;}
@@ -336,7 +359,7 @@
 
   <div class="tabs" role="tablist">
     <button class="tab" id="tab-find" role="tab" aria-selected="true" onclick="showTab('find')">Find prospects</button>
-    <button class="tab" id="tab-list" role="tab" aria-selected="false" onclick="showTab('list')">My list <span class="badge" id="list-count">0</span></button>
+    <button class="tab" id="tab-list" role="tab" aria-selected="false" onclick="showTab('list')">To do <span class="badge" id="list-count">0</span></button>
     <button class="tab" id="tab-table" role="tab" aria-selected="false" onclick="showTab('table')">Table view</button>
   </div>
 
@@ -440,7 +463,7 @@
   <!-- LIST -->
   <section class="panel" id="panel-list">
     <div class="list-bar">
-      <select id="filter-status" onchange="renderList()">
+      <select id="filter-status" aria-label="Filter to-do list" onchange="renderList()">
         <option value="new" selected>New / to action</option>
         <option value="review">Needs review</option>
         <option value="ready">Ready to send</option>
@@ -455,7 +478,7 @@
         <option value="customer">Client</option>
         <option value="dead">Dead (no website / declined)</option>
       </select>
-      <select id="sort-by" onchange="renderList()">
+      <select id="sort-by" aria-label="Sort to-do list" onchange="renderList()">
         <option value="added">Newest added</option>
         <option value="score">Best fit first</option>
         <option value="name">Name A–Z</option>
@@ -472,8 +495,8 @@
   <!-- TABLE -->
   <section class="panel" id="panel-table">
     <div class="list-bar">
-      <input type="text" id="table-search" class="table-toolbar-search" placeholder="Search name, area, notes…" oninput="renderTable()">
-      <select id="table-filter-status" onchange="renderTable()">
+      <input type="text" id="table-search" class="table-toolbar-search" aria-label="Search businesses" placeholder="Search name, area, notes…" oninput="renderTable()">
+      <select id="table-filter-status" aria-label="Filter businesses" onchange="renderTable()">
         <option value="active">Active pipeline</option>
         <option value="review">Needs review</option>
         <option value="ready">Ready to send</option>
@@ -488,11 +511,12 @@
         <option value="dead">Dead (no website / declined)</option>
       </select>
       <div class="spacer"></div>
-      <button class="ghost" onclick="resetColumns()">Reset columns</button>
+      <button class="ghost" id="table-view-toggle" type="button" onclick="toggleTableView()">Show all columns</button>
+      <button class="ghost" id="reset-cols" onclick="resetColumns()" hidden>Reset columns</button>
       <button class="ghost" onclick="importCSV()">Import CSV</button>
       <button class="ghost" onclick="exportCSV()">Export CSV</button>
     </div>
-    <p class="hidden-note" style="margin:0 2px 8px;">Tip: drag a column heading left or right to rearrange the columns.</p>
+    <p class="hidden-note" id="table-tip" style="margin:0 2px 8px;">Select Details to edit notes and outreach information. Use Show all columns for the full spreadsheet view.</p>
     <div class="table-scroll">
       <table class="data-table">
         <thead><tr id="table-head"></tr></thead>
@@ -501,11 +525,30 @@
     </div>
   </section>
 
-  <div class="foot" id="foot">
-    <b>How the no-repeat works:</b> every business you Add or Dismiss is saved on this device straight away and backed up to your account. New searches skip anything you've already actioned — including a business OpenStreetMap has re-listed under a new id, matched on name plus area, address or phone — and anything marked “Dismissed”, “Has website” or “Not interested” stays hidden for good. The line under the tabs tells you the truth about saving: <b>☁ synced</b> means it's safely in your account, <b>☁ saving…</b> or <b>offline</b> means it's on this device and still queued, and it keeps retrying until it's up.<br>
-    <b>Choosing a category:</b> each <b>All …</b> option covers just the one group it sits in — “All health &amp; wellness” won’t return a plumber. <b>All business types</b> at the top sweeps every group at once. It runs as several smaller searches — you’ll see a <span class="mono">3/6</span> style counter while it works — so it takes under a minute even at 40 km. Trades, food &amp; drink, motoring and professional services are usually the biggest untapped groups in a town, and every one of them is a one-page-demo business. If a run says some parts didn’t come back, OpenStreetMap was briefly busy: search again and the gaps fill in. On the map, a numbered circle means several businesses are stacked at that spot: zoom in or tap the number to open them.<br>
-    <b>Reading the map:</b> pin colour shows fit — green strong, amber medium, grey weaker. Tapping a pin turns it <b>purple</b> so you can see what you've already looked at (the popup has an <b>undo</b> if you tapped by mistake), and a stack turns purple once you've opened everything in it. Add or Dismiss removes the pin altogether, so whatever is still coloured is still to do. Visited pins are remembered on this device only.<br>
-    Data from <a class="link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors. Coverage of small owner-run businesses varies by town — if a search looks thin, widen the radius or move up to the group’s “All …” option, and use the <b>Maps ↗</b> link on each result to verify with your usual Google check. <b>Maps ↗</b> looks the business up by name with the map already zoomed to its street; if Google has no listing under that name, <b>Pin ↗</b> (“exact spot” in map popups) drops you on the exact coordinates so you can see what is really there.
+  <details class="foot help" id="foot">
+    <summary>Help: searching, saving and map colours</summary>
+    <div class="help-body">
+      <p><b>Getting started:</b> Search for businesses, add the ones you want to track, then use To do and Table view to update their status. The To do count shows new prospects; Table view shows the wider pipeline.</p>
+      <p><b>Search and map:</b> Choose a town, category and radius. An “All …” category searches that whole group. Map pins use green, amber and grey to show fit; purple means you have opened that pin. Search results come from <a class="link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors and may be incomplete, so check business details before contacting anyone.</p>
+      <p><b>Saving:</b> Signed-in changes save on this device first, then sync to your account. The status line shows whether syncing is complete or waiting for a connection. Sample demo changes reset when you reload.</p>
+      <p><b>CSV:</b> Import existing prospects or export your list from To do or Table view. In sample mode, imports are for exploration only and are not saved.</p>
+    </div>
+  </details>
+  <div id="detail-overlay" class="detail-overlay" hidden>
+    <section class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+      <div class="detail-head"><div><h2 id="detail-title"></h2><p id="detail-meta"></p></div><button class="ghost" id="detail-close" type="button" onclick="closeDetails()" aria-label="Close details">Close</button></div>
+      <div class="detail-grid">
+        <label>Phone<input id="detail-phone" type="tel" data-detail-field="phone" autocomplete="off"></label>
+        <label>Email<input id="detail-email" type="email" data-detail-field="email" autocomplete="off"></label>
+        <label>Social link<input id="detail-social" type="text" data-detail-field="social" autocomplete="off"></label>
+        <label>Last contacted<input id="detail-last-contacted" type="date" data-detail-field="lastContactedAt"></label>
+        <label class="detail-wide">Notes<textarea id="detail-notes" data-detail-field="notes" rows="3"></textarea></label>
+        <label class="detail-wide">First message<textarea id="detail-message" data-detail-field="message" rows="3"></textarea></label>
+        <label class="detail-wide">Email subject<input id="detail-email-subject" type="text" data-detail-field="emailSubject"></label>
+        <label class="detail-wide">Email draft<textarea id="detail-email-body" data-detail-field="emailBody" rows="4"></textarea></label>
+      </div>
+      <p class="hidden-note">Changes save when you leave a field. In the sample demo, changes reset when you reload.</p>
+    </section>
   </div>
 </div>
 
@@ -554,11 +597,12 @@ function migrateLegacy(){
   }
 }
 const DEMO_RECORDS = Object.freeze({
-  'demo/1': {id:'demo/1',name:'Willow Lane Flowers',area:'Norwich',cat:'Florist',status:'new',website:'',phone:'',email:'',notes:'Sample prospect for demonstration only.',addedAt:1,updatedAt:1},
-  'demo/2': {id:'demo/2',name:'North Street Studio',area:'Norwich',cat:'Wellness',status:'demo_built',website:'https://example.com',phone:'',email:'',notes:'Fictional business. No outreach has occurred.',addedAt:2,updatedAt:2},
-  'demo/3': {id:'demo/3',name:'Oak & Fern Services',area:'Norwich',cat:'Home services',status:'interested',website:'',phone:'',email:'',notes:'Fictional pipeline example.',addedAt:3,updatedAt:3}
+  'demo/1': {id:'demo/1',name:'Willow Lane Flowers',area:'Norwich',cat:'Florist',status:'new',website:'',phone:'',email:'',notes:'Sample prospect for demonstration only.',addedAt:Date.now()-7*86400000,updatedAt:Date.now()-7*86400000},
+  'demo/2': {id:'demo/2',name:'North Street Studio',area:'Norwich',cat:'Wellness',status:'demo_built',website:'https://example.com',phone:'',email:'',notes:'Fictional business. No outreach has occurred.',addedAt:Date.now()-4*86400000,updatedAt:Date.now()-4*86400000},
+  'demo/3': {id:'demo/3',name:'Oak & Fern Services',area:'Norwich',cat:'Home services',status:'interested',website:'',phone:'',email:'',notes:'Fictional pipeline example.',addedAt:Date.now()-2*86400000,updatedAt:Date.now()-2*86400000}
 });
 function openDemo(){
+  closeDetails();
   demoMode = true;
   activeUserId = null;
   store = structuredClone(DEMO_RECORDS);
@@ -683,7 +727,9 @@ function updateSaveIndicator(blocked){
   else if(!cloudLoggedIn()) cloud = ' · ⚠ not signed in — this device only';
   else if(cloudDirty)    cloud = cloudOnline ? ' · ☁ saving…' : ' · ☁ offline — will sync when back';
   else                   cloud = ' · ☁ synced';
-  el2.textContent = `Saved: ${n} ${n===1?'business':'businesses'} · ${time}${cloud}`;
+  el2.textContent = demoMode
+    ? `${n} sample ${n===1?'business':'businesses'} · changes reset when you reload`
+    : `Saved: ${n} ${n===1?'business':'businesses'} · ${time}${cloud}`;
   el2.style.color = cloudDirty ? '#b26a00' : '';
 }
 
@@ -2506,21 +2552,25 @@ function renderList(){
   else if(sort==='contacted') arr.sort((a,b)=>(a.lastContactedAt||0)-(b.lastContactedAt||0));
   else arr.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
 
-  // The hint explains why progressed businesses aren't cluttering this view:
-  // My list is the fresh queue; anything with a status lives in Table view.
   const hintEl=el('list-hint');
   if(hintEl){
-    hintEl.innerHTML = (f==='new')
-      ? 'Your fresh queue — new, uncontacted prospects only. The agent builds a demo for each one on its next run. The moment you set a status, a business moves out of here into the <b>Table view</b> pipeline.'
-      : (f==='review')
-      ? 'Businesses the agent couldn’t settle on its own. <b>Build demo</b> sends one back to the agent (add a note if it needs one) and it is built on the next run; <b>Has website</b> and <b>Dismiss</b> close it.'
-      : (f==='call')
-      ? 'Businesses with a phone number that nobody has spoken to yet. Tap the number to call, then log what happened — it moves on or drops out of this list. <b>Phone only</b> means there is no email or social to message them on. <button class="ghost" style="padding:4px 10px;font-size:12.5px;margin-left:6px;" onclick="exportCallSheet()">Download call sheet (CSV)</button>'
-      : (f==='ready')
-      ? 'Live demos waiting for you to send. <b>Open in Gmail</b> only pre-fills a draft — nothing is sent until you press Send there. Tap <b>Mark as sent</b> afterwards.'
-      : (f==='followup')
-      ? 'Businesses you contacted 7+ days ago who haven’t replied, with a follow-up the agent drafted. Send it by email (<b>Open in Gmail</b> only pre-fills a draft) or paste the DM, then tap <b>Mark followed up</b>. If they’re still quiet a week later the agent drafts one more, then stops.'
-      : 'Viewing your wider pipeline. Switch back to <b>New / to action</b> for just the fresh queue.';
+    const count = `Showing ${arr.length} of ${all.length} businesses. `;
+    const guidance = {
+      new:'New prospects waiting for your first action. Change a status to move a business into the wider pipeline.',
+      review:'Records that need a decision. Check the details, then update their status.',
+      call:'Businesses with a phone number that have not been contacted yet.',
+      ready:'Demos ready to share. Open in Gmail prepares a draft; you choose whether to send it.',
+      followup:'Previously contacted businesses with a follow-up draft to review.',
+      active:'All businesses still in progress.',
+      all:'Every saved business, including archived or dismissed records.'
+    };
+    hintEl.textContent = count + (guidance[f] || 'Businesses matching this status.');
+    if(f==='call'){
+      const btn=document.createElement('button');
+      btn.className='ghost'; btn.textContent='Download call sheet (CSV)';
+      btn.style.cssText='padding:4px 10px;font-size:12.5px;margin-left:6px;';
+      btn.onclick=exportCallSheet; hintEl.appendChild(btn);
+    }
   }
 
   if(!arr.length){
@@ -2529,13 +2579,13 @@ function renderList(){
     if(!all.length){
       msg='<div class="big">Nothing here yet</div>Run a search and add the businesses worth chasing.';
     }else if(f==='review'){
-      msg='<div class="big">Nothing to review 🎉</div>The agent will flag anything it can’t settle here.';
+      msg='<div class="big">Nothing to review</div>Records needing a decision will appear here.';
     }else if(f==='call'){
       msg='<div class="big">Nobody to call right now</div>Businesses with a phone number show up here once they are on your list.';
     }else if(f==='ready'){
-      msg='<div class="big">Nothing waiting to send</div>Demos the agent finishes will appear here with their email and message drafts.';
+      msg='<div class="big">Nothing waiting to send</div>Businesses marked Demo built will appear here.';
     }else if(f==='followup'){
-      msg='<div class="big">No follow-ups waiting</div>The agent drafts one here for anyone you contacted 7+ days ago who hasn’t replied.';
+      msg='<div class="big">No follow-ups waiting</div>Businesses with a follow-up draft will appear here.';
     }else if(f==='new'){
       msg = progressed
         ? `<div class="big">Queue clear 🎉</div>No new prospects to action. Your ${progressed} in-progress business${progressed>1?'es are':' is'} in the <b>Table view</b> — or run a search to add more.`
@@ -2577,7 +2627,7 @@ function refreshStats(){
     <div class="stat"><div class="n mono">${contacted}</div><div class="l">In play</div></div>
     <div class="stat green"><div class="n mono">${cust}</div><div class="l">Clients</div></div>`;
   // Badge tracks the fresh queue (New) to match what the My list tab now shows.
-  el('list-count').textContent=newc+revc;
+  el('list-count').textContent=newc;
 }
 
 /* ---------- table view (sortable spreadsheet-style) ---------- */
@@ -2625,6 +2675,19 @@ const TABLE_COLS=[
 ];
 const COLS_KEY='table_cols_v1';
 let colOrder=TABLE_COLS.map(c=>c.key);
+let tableCompact=true;
+const COMPACT_KEYS=['name','area','status','website'];
+const DETAILS_COL={key:'details',label:'Details',sort:false,cell:r=>`<td class="col-details"><button type="button" class="ghost detail-open" data-record-id="${esc(r.id)}">Details</button></td>`};
+function visibleTableCols(){ return tableCompact ? [...COMPACT_KEYS.map(colByKey),DETAILS_COL] : colOrder.map(colByKey).filter(Boolean); }
+function toggleTableView(){
+  tableCompact=!tableCompact;
+  el('table-view-toggle').textContent=tableCompact?'Show all columns':'Show simple view';
+  el('reset-cols').hidden=tableCompact;
+  el('table-tip').textContent=tableCompact
+    ? 'Select Details to edit notes and outreach information. Use Show all columns for the full spreadsheet view.'
+    : 'Drag a column heading to rearrange the full spreadsheet view. Select Show simple view to focus on the essentials.';
+  renderTable();
+}
 function colByKey(k){ return TABLE_COLS.find(c=>c.key===k); }
 function saveColOrder(){ try{ accountSet(COLS_KEY, JSON.stringify(colOrder)); }catch(e){} }
 function loadColOrder(){
@@ -2715,21 +2778,22 @@ function renderTable(){
     return cmp*tableSort.dir;
   });
 
-  el('table-head').innerHTML=colOrder.map(key=>{
-    const c=colByKey(key); if(!c) return '';
+  const columns=visibleTableCols();
+  const tableEl=el('table-head').closest('table');
+  tableEl.classList.toggle('compact',tableCompact);
+  el('table-head').innerHTML=columns.map(c=>{
     const active=c.key===tableSort.key;
     const arrow=active ? (tableSort.dir===1?'▲':'▼') : '';
     const sortable=c.sort!==false;
-    return `<th draggable="true" data-key="${c.key}" class="col-${c.key}${active?' sorted':''}"${sortable?` onclick="sortTable('${c.key}')"`:''}>${c.label}${sortable?`<span class="sort-arrow">${arrow}</span>`:''}</th>`;
+    return `<th draggable="${!tableCompact}" data-key="${c.key}" class="col-${c.key}${active?' sorted':''}"${sortable?` onclick="sortTable('${c.key}')"`:''}>${c.label}${sortable?`<span class="sort-arrow">${arrow}</span>`:''}</th>`;
   }).join('');
   setupColumnDrag();
 
   // Name column only stays pinned to the left while it is actually the first column
-  const tableEl=el('table-head').closest('table');
-  if(tableEl) tableEl.classList.toggle('name-sticky', colOrder[0]==='name');
+  tableEl.classList.toggle('name-sticky', !tableCompact && colOrder[0]==='name');
 
   if(!arr.length){
-    el('table-body').innerHTML=`<tr><td colspan="${colOrder.length}"><div class="empty"><div class="big">Nothing here yet</div>Add prospects from Find, or adjust the filters above.</div></td></tr>`;
+    el('table-body').innerHTML=`<tr><td colspan="${columns.length}"><div class="empty"><div class="big">Nothing here yet</div>Add prospects from Find, or adjust the filters above.</div></td></tr>`;
     return;
   }
   el('table-body').innerHTML=arr.map(r=>tableRow(r)).join('');
@@ -2737,10 +2801,44 @@ function renderTable(){
 }
 function tableRow(r){
   const rowClass=DEAD.has(r.status) ? 'dead-row' : 'st-'+r.status;
-  const cells=colOrder.map(key=>{ const c=colByKey(key); return c? c.cell(r) : ''; }).join('');
+  const cells=visibleTableCols().map(c=>c.cell(r)).join('');
   return `<tr class="${rowClass}">${cells}</tr>`;
 }
 
+/* ---------- focused business details ---------- */
+let detailId=null;
+let detailReturnFocus=null;
+function openDetails(id, trigger){
+  const r=rec(id); if(!r) return;
+  detailId=id;
+  detailReturnFocus=trigger||null;
+  el('detail-title').textContent=r.name||'Business details';
+  el('detail-meta').textContent=[r.area,r.cat].filter(Boolean).join(' · ');
+  const values={
+    phone:r.phone||'',email:r.email||'',social:r.social||'',
+    lastContactedAt:r.lastContactedAt?new Date(r.lastContactedAt).toISOString().slice(0,10):'',
+    notes:r.notes||'',message:r.message||'',emailSubject:r.emailSubject||'',emailBody:r.emailBody||''
+  };
+  for(const [field,value] of Object.entries(values)){
+    const input=document.querySelector('[data-detail-field="'+field+'"]');
+    if(input) input.value=value;
+  }
+  el('detail-overlay').hidden=false;
+  el('detail-close').focus();
+}
+function closeDetails(){
+  const overlay=el('detail-overlay'); if(overlay) overlay.hidden=true;
+  detailId=null;
+  if(detailReturnFocus && document.contains(detailReturnFocus)) detailReturnFocus.focus();
+  detailReturnFocus=null;
+}
+async function saveDetailField(input){
+  if(!detailId) return;
+  const field=input.dataset.detailField, value=input.value, id=detailId;
+  const setters={phone:setPhone,email:setEmail,social:setSocial,lastContactedAt:setLastContacted,
+    notes:setNote,message:setMessage,emailSubject:setEmailSubject,emailBody:setEmailBody};
+  if(setters[field]){ await setters[field](id,value); renderTable(); }
+}
 /* ---------- import / export ---------- */
 function parseCSV(text){
   const rows=[];
@@ -2904,6 +3002,13 @@ function showTab(t){
 
   refreshStats();
   el('loc').addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(); });
+  el('table-body').addEventListener('click',e=>{
+    const button=e.target.closest('.detail-open');
+    if(button) openDetails(button.dataset.recordId,button);
+  });
+  el('detail-overlay').addEventListener('click',e=>{ if(e.target===e.currentTarget) closeDetails(); });
+  el('detail-overlay').addEventListener('change',e=>{ if(e.target.matches('[data-detail-field]')) saveDetailField(e.target); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape' && !el('detail-overlay').hidden) closeDetails(); });
   window.addEventListener('resize', sizeTableHeight);
 
   document.addEventListener('visibilitychange', ()=>{
