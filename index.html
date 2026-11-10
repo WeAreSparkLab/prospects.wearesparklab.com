@@ -517,6 +517,40 @@ const SETTINGS_KEY = 'settings_v1';
 const THEME_KEY = 'theme_v1';
 let store = {};          // id -> record
 let demoMode = true;      // signed-out visitors only see in-memory sample data
+let activeUserId = null;
+const LEGACY_OWNER_KEY = 'prospects_legacy_owner_v1';
+const ACCOUNT_KEYS = ['prospects_v1','prospects_v1_backup','prospects_dirty_v1','settings_v1','visited_v1','resultview_v1','table_cols_v1'];
+function accountKey(key){ return activeUserId ? `${key}:user:${activeUserId}` : null; }
+function accountGet(key){ const k=accountKey(key); return k ? localStorage.getItem(k) : null; }
+function accountSet(key, value){ const k=accountKey(key); if(k) localStorage.setItem(k,value); }
+function accountRemove(key){ const k=accountKey(key); if(k) localStorage.removeItem(k); }
+// The former app used shared keys. Move them once, only for the account that owned
+// the existing browser session, or after an explicit confirmation at sign-in.
+function migrateLegacy(){
+  if(!activeUserId || !localStorage.getItem(STORE_KEY)) return;
+  const boundOwner = localStorage.getItem(LEGACY_OWNER_KEY);
+  if(boundOwner && boundOwner !== activeUserId) return;
+  if(!boundOwner && !confirm('This browser has an older prospect list. Import that local list into the account you just signed into? Choose Cancel if it belongs to someone else.')) return;
+  // Copy and verify every value before removing any old key, preserving an
+  // unsynced local list even if this browser runs out of space.
+  const copied=[];
+  try{
+    for(const key of ACCOUNT_KEYS){
+      const value=localStorage.getItem(key);
+      if(value == null) continue;
+      const scoped=accountKey(key);
+      if(localStorage.getItem(scoped) == null){ localStorage.setItem(scoped,value); copied.push(scoped); }
+      if(localStorage.getItem(scoped) == null) throw new Error('Migration write failed');
+    }
+    localStorage.setItem(LEGACY_OWNER_KEY, activeUserId);
+    for(const key of ACCOUNT_KEYS) localStorage.removeItem(key);
+  }catch(e){
+    for(const key of copied) localStorage.removeItem(key);
+    console.error('Could not move the local prospect list into account storage',e);
+    alert('Your older local list is still safe in this browser, but it could not be moved. Please free some browser storage and reload before editing.');
+    throw e;
+  }
+}
 const DEMO_RECORDS = Object.freeze({
   'demo/1': {id:'demo/1',name:'Willow Lane Flowers',area:'Norwich',cat:'Florist',status:'new',website:'',phone:'',email:'',notes:'Sample prospect for demonstration only.',addedAt:1,updatedAt:1},
   'demo/2': {id:'demo/2',name:'North Street Studio',area:'Norwich',cat:'Wellness',status:'demo_built',website:'https://example.com',phone:'',email:'',notes:'Fictional business. No outreach has occurred.',addedAt:2,updatedAt:2},
@@ -524,10 +558,12 @@ const DEMO_RECORDS = Object.freeze({
 });
 function openDemo(){
   demoMode = true;
+  activeUserId = null;
   store = structuredClone(DEMO_RECORDS);
   storeLoadedOk = true;
   cloudDirty = false;
   lastResults = [];
+  visited = {};
   renderAccountBar();
   rerenderAll();
 }
@@ -584,7 +620,7 @@ function liveCount(){ let n = 0; for(const k in store){ if(isLive(store[k])) n++
 async function loadStore(){
   if(demoMode) return;
   try{
-    const raw = localStorage.getItem(STORE_KEY);
+    const raw = accountGet(STORE_KEY);
     if(raw){
       store = JSON.parse(raw);
       storeLoadedOk = true;
@@ -603,7 +639,7 @@ async function loadStore(){
   // migrate old 'contacted' status (pre Demo built / Message sent split) to 'message_sent'
   Object.values(store).forEach(r=>{ if(r.status==='contacted') r.status='message_sent'; });
   normaliseStore();
-  try{ cloudDirty = localStorage.getItem(DIRTY_KEY) === '1'; }catch(e){}
+  try{ cloudDirty = accountGet(DIRTY_KEY) === '1'; }catch(e){}
 }
 
 // Backfill stamps on older records and drop expired tombstones.
@@ -621,7 +657,7 @@ function normaliseStore(){
 
 function markDirty(v){
   cloudDirty = v;
-  try{ v ? localStorage.setItem(DIRTY_KEY,'1') : localStorage.removeItem(DIRTY_KEY); }catch(e){}
+  try{ v ? accountSet(DIRTY_KEY,'1') : accountRemove(DIRTY_KEY); }catch(e){}
 }
 
 function updateSaveIndicator(blocked){
@@ -658,7 +694,7 @@ function writeLocal(){
     // This is what protects against the exact bug that wiped the list previously —
     // a bad/partial load leaving `store` empty in memory, silently saved over real data.
     let existing = null;
-    try{ existing = localStorage.getItem(STORE_KEY); }catch(e){}
+    try{ existing = accountGet(STORE_KEY); }catch(e){}
     if(existing && existing !== '{}' && existing !== 'null'){
       console.warn('writeLocal: refused to overwrite non-empty storage with an empty store.');
       updateSaveIndicator(true);
@@ -667,10 +703,10 @@ function writeLocal(){
   }
   try{
     const json = JSON.stringify(store);
-    localStorage.setItem(STORE_KEY, json);
+    accountSet(STORE_KEY, json);
     if(keys.length > 0){
       // Rolling backup: only ever updated on a genuinely non-empty save.
-      localStorage.setItem(BACKUP_KEY, json);
+      accountSet(BACKUP_KEY, json);
     }
     localSaveFailed = false;
   }catch(e){
@@ -679,8 +715,8 @@ function writeLocal(){
     console.error('save failed', e);
     localSaveFailed = true;
     try{
-      localStorage.removeItem(BACKUP_KEY);
-      localStorage.setItem(STORE_KEY, JSON.stringify(store));
+      accountRemove(BACKUP_KEY);
+      accountSet(STORE_KEY, JSON.stringify(store));
       localSaveFailed = false;
     }catch(e2){ console.error('save failed again after dropping the backup copy', e2); }
   }
@@ -698,7 +734,7 @@ async function saveStore(){
 }
 async function loadSettings(){
   try{
-    const raw = localStorage.getItem(SETTINGS_KEY);
+    const raw = accountGet(SETTINGS_KEY);
     return raw ? JSON.parse(raw) : null;
   }catch(e){ return null; }
 }
@@ -708,7 +744,7 @@ async function saveSettings(){
   // starts back on that rather than silently staying on a previous session's
   // "has website" or "show all" choice.
   const s = { loc:el('loc').value, cat:el('cat').value, rad:el('rad').value };
-  try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
+  try{ accountSet(SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
   if(cloudLoggedIn()) markDirty(true);
   schedulePush();
 }
@@ -830,7 +866,7 @@ async function pushNow(useKeepalive){
     }
   }
   let settings = {};
-  try{ settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; }catch(e){}
+  try{ settings = JSON.parse(accountGet(SETTINGS_KEY) || '{}') || {}; }catch(e){}
   const rev = storeRev;   // anything saved while this request is in flight is not in this body
   const body = JSON.stringify({ user_id: cloudSession.user_id, store, settings, updated_at: new Date().toISOString() });
   // Browsers cap `keepalive` request bodies at 64KB and reject anything larger
@@ -942,8 +978,8 @@ async function syncNow(){
     if(JSON.stringify(store) !== before){ changed = true; writeLocal(); }
     if(pulled.settings){
       try{
-        if(!localStorage.getItem(SETTINGS_KEY)){
-          localStorage.setItem(SETTINGS_KEY, JSON.stringify(pulled.settings));
+        if(!accountGet(SETTINGS_KEY)){
+          accountSet(SETTINGS_KEY, JSON.stringify(pulled.settings));
         }
       }catch(e){}
     }
@@ -982,7 +1018,12 @@ function ensureLoginOverlay(){
     try{
       await cloudLogin(em, pw);
       demoMode = false;
+      activeUserId = cloudSession.user_id;
+      migrateLegacy();
       await loadStore();
+      loadVisited(); loadColOrder();
+      const accountSettings = await loadSettings();
+      if(accountSettings){ el('loc').value=accountSettings.loc||''; if(accountSettings.cat) el('cat').value=accountSettings.cat; if(accountSettings.rad) el('rad').value=accountSettings.rad; }
       hideLoginOverlay();
       renderAccountBar();
       rerenderAll();
@@ -1651,9 +1692,9 @@ const VISITED_KEY='visited_v1';
 const VISITED_COLOR='#7B5EC7';
 let visited={};              // id -> timestamp first opened
 function loadVisited(){
-  try{ visited=JSON.parse(localStorage.getItem(VISITED_KEY)||'{}')||{}; }catch(e){ visited={}; }
+  try{ visited=JSON.parse(accountGet(VISITED_KEY)||'{}')||{}; }catch(e){ visited={}; }
 }
-function saveVisited(){ try{ localStorage.setItem(VISITED_KEY, JSON.stringify(visited)); }catch(e){} }
+function saveVisited(){ try{ accountSet(VISITED_KEY, JSON.stringify(visited)); }catch(e){} }
 function isVisited(id){ return !!visited[id]; }
 // The colour a single pin should be drawn in right now.
 function pinColor(r){ return isVisited(r.id) ? VISITED_COLOR : markerColor(r.score||scoreOf(r,r.core)); }
@@ -1835,7 +1876,7 @@ function applyMapView(){
 
 function setResultView(v){
   resultView = (v==='list') ? 'list' : 'map';
-  try{ localStorage.setItem(MAPVIEW_KEY, resultView); }catch(e){}
+  try{ accountSet(MAPVIEW_KEY, resultView); }catch(e){}
   const showMap = resultView==='map' && hasMap();
   const mapEl=el('map'), listEl=el('results'), mapBtn=el('view-map-btn'), listBtn=el('view-list-btn');
   if(mapEl)  mapEl.style.display  = showMap ? 'block' : 'none';
@@ -2583,10 +2624,10 @@ const TABLE_COLS=[
 const COLS_KEY='table_cols_v1';
 let colOrder=TABLE_COLS.map(c=>c.key);
 function colByKey(k){ return TABLE_COLS.find(c=>c.key===k); }
-function saveColOrder(){ try{ localStorage.setItem(COLS_KEY, JSON.stringify(colOrder)); }catch(e){} }
+function saveColOrder(){ try{ accountSet(COLS_KEY, JSON.stringify(colOrder)); }catch(e){} }
 function loadColOrder(){
   try{
-    const raw=localStorage.getItem(COLS_KEY);
+    const raw=accountGet(COLS_KEY);
     if(!raw) return;
     const arr=JSON.parse(raw);
     if(!Array.isArray(arr)) return;
@@ -2828,12 +2869,17 @@ function showTab(t){
   loadCloudSession();
   if(cloudLoggedIn()){
     await cloudRefresh();
-    if(cloudSession){ demoMode = false; await loadStore(); }
+    if(cloudSession){
+      demoMode = false;
+      activeUserId = cloudSession.user_id;
+      migrateLegacy();
+      await loadStore();
+    }
     else openDemo();
   } else openDemo();
   loadVisited();              // which map pins you've already opened (device-local)
   loadColOrder();
-  try{ const v=localStorage.getItem(MAPVIEW_KEY); if(v==='map'||v==='list') resultView=v; }catch(e){}
+  try{ const v=accountGet(MAPVIEW_KEY); if(v==='map'||v==='list') resultView=v; }catch(e){}
   buildCategoryMenus();       // must precede the settings restore below — it sets el('cat').value
   const s=await loadSettings();
   if(s){
